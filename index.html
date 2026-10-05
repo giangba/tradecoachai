@@ -38,13 +38,13 @@ button.pri:disabled{opacity:.5}button.sec{background:var(--line);color:var(--tx)
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let sb,S={rules:"",trades:[]},uid,tab="dash",busy=false;
+let tok,sb,S={rules:"",trades:[]},uid,tab="dash",busy=false;
 const tabs={dash:"Dashboard",rules:"Setup chuẩn",new:"+ Lệnh mới",log:"Nhật ký"};
 $("#nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-k="${k}">${v}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.k)show(e.target.dataset.k)};
 function show(k){tab=k;for(const t in tabs)$("#p-"+t).classList.toggle("hide",t!==k);
  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.k===k));render()}
-async function token(){return (await sb.auth.getSession()).data.session?.access_token}
+async function token(){return tok||(await sb.auth.getSession()).data.session?.access_token}
 async function api(body){const ac=new AbortController(),tm=setTimeout(()=>ac.abort(),75000);
  try{const r=await fetch("/api/analyze",{method:"POST",signal:ac.signal,headers:{"content-type":"application/json",Authorization:"Bearer "+await token()},body:JSON.stringify(body)});
  const raw=await r.text();let j;try{j=JSON.parse(raw)}catch(e){throw new Error("Server trả lỗi "+r.status+": "+raw.slice(0,120))}
@@ -58,8 +58,8 @@ function compress(file){return new Promise((ok,no)=>{const t=setTimeout(()=>no(n
  im.onerror=()=>{clearTimeout(t);no(new Error("Định dạng ảnh không được hỗ trợ (HEIC/WEBP lạ?). Hãy dùng PNG/JPG"))};im.src=URL.createObjectURL(file)})}
 async function boot(){
  const c=await (await fetch("/api/config")).json();sb=supabase.createClient(c.url,c.key);
- sb.auth.onAuthStateChange((_e,s)=>enter(s));enter((await sb.auth.getSession()).data.session)}
-async function enter(s){const on=!!s;$("#auth").classList.toggle("hide",on);$("#app").classList.toggle("hide",!on);$("#out").classList.toggle("hide",!on);
+ sb.auth.onAuthStateChange((_e,s)=>{setTimeout(()=>enter(s),0)});enter((await sb.auth.getSession()).data.session)}
+async function enter(s){tok=s?.access_token;const on=!!s;$("#auth").classList.toggle("hide",on);$("#app").classList.toggle("hide",!on);$("#out").classList.toggle("hide",!on);
  if(!on){uid=null;$("#who").textContent="";return}
  if(uid===s.user.id)return;uid=s.user.id;$("#who").textContent=s.user.email;
  const r=await sb.from("rules").select("body").maybeSingle();S.rules=r.data?.body||"";
