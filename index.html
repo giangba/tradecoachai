@@ -27,6 +27,7 @@ button.pri:disabled{opacity:.5}button.sec{background:var(--line);color:var(--tx)
 .trade{border-left:4px solid var(--line)}.trade.green{border-color:var(--up)}.trade.red{border-color:var(--dn)}.trade.yellow{border-color:var(--warn)}
 .mut{color:var(--mut)}.hide{display:none}.bar{height:8px;background:var(--bg);border-radius:4px;overflow:hidden}.bar i{display:block;height:100%;background:var(--dn)}
 .overflow{overflow-x:auto}.imgs img{max-width:48%;border-radius:6px;border:1px solid var(--line);margin:4px 1% 0 0}
+.chip{background:var(--bg);border:1px solid var(--line);color:var(--tx);padding:6px 12px;border-radius:16px;cursor:pointer;margin:0 6px 6px 0;font:inherit}.chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
 #auth{max-width:380px;margin:60px auto}
 </style></head><body>
 <header><h1>📈 Trade<b>Coach</b> AI</h1><span><span class="mut" id="who"></span> <button class="sec hide" id="out">Đăng xuất</button></span></header>
@@ -38,7 +39,7 @@ button.pri:disabled{opacity:.5}button.sec{background:var(--line);color:var(--tx)
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-let tok,sb,S={rules:"",trades:[]},uid,tab="dash",busy=false;
+let fSetup="",editId=null,tok,sb,S={setups:[],trades:[]},uid,tab="dash",busy=false;
 const tabs={dash:"Dashboard",rules:"Setup chuẩn",new:"+ Lệnh mới",log:"Nhật ký"};
 $("#nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-k="${k}">${v}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.k)show(e.target.dataset.k)};
@@ -62,13 +63,13 @@ async function boot(){
 async function enter(s){tok=s?.access_token;const on=!!s;$("#auth").classList.toggle("hide",on);$("#app").classList.toggle("hide",!on);$("#out").classList.toggle("hide",!on);
  if(!on){uid=null;$("#who").textContent="";return}
  if(uid===s.user.id)return;uid=s.user.id;$("#who").textContent=s.user.email;
- const r=await sb.from("rules").select("body").maybeSingle();S.rules=r.data?.body||"";
+ const r=await sb.from("setups").select("*").order("created_at");S.setups=r.data||[];editId=null;
  const t=await sb.from("trades").select("*").order("created_at");S.trades=t.data||[];
  ["rules","new"].forEach(k=>delete $("#p-"+k).dataset.r);show("dash")}
 $("#a-in").onclick=async()=>{const r=await sb.auth.signInWithPassword({email:$("#a-mail").value,password:$("#a-pw").value});if(r.error)$("#a-msg").textContent=r.error.message};
 $("#a-up").onclick=async()=>{const r=await sb.auth.signUp({email:$("#a-mail").value,password:$("#a-pw").value});$("#a-msg").textContent=r.error?r.error.message:(r.data.session?"":"Kiểm tra email để xác nhận tài khoản.")};
 $("#out").onclick=()=>sb.auth.signOut();
-function stats(){const t=S.trades,done=t.filter(x=>x.result==="win"||x.result==="loss"),w=done.filter(x=>x.result==="win").length;
+function stats(){const t=S.trades.filter(x=>!fSetup||String(x.setup_id)===fSetup),done=t.filter(x=>x.result==="win"||x.result==="loss"),w=done.filter(x=>x.result==="win").length;
  const sc=t.filter(x=>x.ai&&typeof x.ai.score==="number"),avg=sc.length?Math.round(sc.reduce((a,x)=>a+x.ai.score,0)/sc.length):null;
  const comp=sc.filter(x=>x.ai.verdict==="green").length,tags={};t.forEach(x=>(x.ai?.violations||[]).forEach(v=>{const k=v.slice(0,60);tags[k]=(tags[k]||0)+1}));
  return{n:t.length,wr:done.length?Math.round(w/done.length*100):null,avg,comp:sc.length?Math.round(comp/sc.length*100):null,sc,tags}}
@@ -80,33 +81,25 @@ function alertHTML(a){if(!a)return'<div class="alert yellow">Chưa có phân tí
  const m={green:["✅ TUÂN THỦ SETUP","green"],red:["🚨 CẢNH BÁO ĐỎ – VI PHẠM KỶ LUẬT","red"],yellow:["⚠️ CẦN LƯU Ý","yellow"]}[a.verdict]||["⚠️ CẦN LƯU Ý","yellow"];
  return`<div class="alert ${m[1]}"><h3>${m[0]} · ${esc(a.score)}/100${a.fomo?" · FOMO":""}</h3>${esc(a.summary)}${a.violations?.length?`<ul>${a.violations.map(v=>`<li>${esc(v)}</li>`).join("")}</ul>`:""}</div>`}
 function render(){
- if(tab==="dash"){const s=stats();$("#p-dash").innerHTML=`<div class="grid" style="margin-bottom:14px">
+ if(tab==="dash"){const s=stats();$("#p-dash").innerHTML=`${S.setups.length?`<select id="d-setup" style="max-width:260px;margin-bottom:12px"><option value="">Tất cả setup</option>${S.setups.map(x=>`<option value="${x.id}" ${String(x.id)===fSetup?"selected":""}>${esc(x.name)}</option>`).join("")}</select>`:""}<div class="grid" style="margin-bottom:14px">
   <div class="card kpi"><small>Tổng số lệnh</small><b>${s.n}</b></div>
   <div class="card kpi"><small>Win-rate</small><b class="${s.wr>=50?"up":"dn"}">${s.wr??"–"}${s.wr!=null?"%":""}</b></div>
   <div class="card kpi"><small>Discipline Score TB</small><b class="${s.avg>=70?"up":s.avg>=40?"wn":"dn"}">${s.avg??"–"}</b></div>
   <div class="card kpi"><small>Lệnh tuân thủ</small><b class="up">${s.comp??"–"}${s.comp!=null?"%":""}</b></div></div>
   <div class="card"><h2>Discipline Score theo thời gian</h2>${chart(s.sc)}</div>
-  <div class="card"><h2>Lỗi thường gặp</h2>${Object.keys(s.tags).length?Object.entries(s.tags).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`<div style="margin:8px 0">${esc(k)} <span class="mut">×${v}</span><div class="bar"><i style="width:${v/Math.max(...Object.values(s.tags))*100}%"></i></div></div>`).join(""):'<p class="mut">Chưa có vi phạm nào.</p>'}</div>`}
- if(tab==="rules"&&!$("#p-rules").dataset.r){$("#p-rules").dataset.r=1;
-  $("#p-rules").innerHTML=`<div class="card"><h2>Setup chuẩn của bạn</h2><p class="mut">Nhập rule bằng văn bản, hoặc upload ảnh chart mẫu (H4, M15) để AI viết rule.</p>
-  <div class="row"><div><label>Ảnh mẫu H4</label><input type="file" id="rh4" accept="image/*"></div><div><label>Ảnh mẫu M15</label><input type="file" id="rm15" accept="image/*"></div></div>
-  <button class="sec" id="rgen" style="margin-top:10px">🤖 AI viết rule từ ảnh</button><label>Quy tắc (có thể chỉnh sửa)</label>
-  <textarea id="rtxt" style="min-height:220px" placeholder="VD: H4 xu hướng tăng, chờ pullback về EMA50, M15 có nến đảo chiều, RR tối thiểu 1:2…"></textarea>
-  <button class="pri" id="rsave">Lưu quy tắc</button> <span id="rmsg" class="mut"></span></div>`;
-  $("#rtxt").value=S.rules;
-  $("#rsave").onclick=async()=>{S.rules=$("#rtxt").value;const r=await sb.from("rules").upsert({user_id:uid,body:S.rules,updated_at:new Date()});$("#rmsg").textContent=r.error?r.error.message:"Đã lưu ✓"};
-  $("#rgen").onclick=async()=>{const f=[$("#rh4").files[0],$("#rm15").files[0]].filter(Boolean);if(!f.length)return $("#rmsg").textContent="Hãy chọn ít nhất một ảnh.";
-   $("#rmsg").textContent="AI đang phân tích…";try{const im=await Promise.all(f.map(compress));const r=await api({mode:"rules",images:im.map(({media_type,data})=>({media_type,data}))});
-   $("#rtxt").value=r.text;$("#rmsg").textContent="Xem lại rồi bấm Lưu."}catch(e){$("#rmsg").textContent="Lỗi: "+e.message}}}
+  ${fSetup?"":setupTable()}<div class="card"><h2>Lỗi thường gặp</h2>${Object.keys(s.tags).length?Object.entries(s.tags).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`<div style="margin:8px 0">${esc(k)} <span class="mut">×${v}</span><div class="bar"><i style="width:${v/Math.max(...Object.values(s.tags))*100}%"></i></div></div>`).join(""):'<p class="mut">Chưa có vi phạm nào.</p>'}</div>`}
+ if(tab==="dash"){const f=$("#d-setup");if(f)f.onchange=()=>{fSetup=f.value;render()}}
+ if(tab==="rules")renderRules();
  if(tab==="new"&&!$("#p-new").dataset.r){$("#p-new").dataset.r=1;
   $("#p-new").innerHTML=`<div class="card"><h2>Thêm lệnh mới</h2><div class="row"><div><label>Cặp tiền</label><input id="n-pair" placeholder="EURUSD"></div>
-  <div><label>Hướng</label><select id="n-side"><option>BUY</option><option>SELL</option></select></div><div><label>Entry</label><input id="n-e" type="number" step="any"></div>
+  <div><label>Setup áp dụng</label><select id="n-setup"></select></div><div><label>Hướng</label><select id="n-side"><option>BUY</option><option>SELL</option></select></div><div><label>Entry</label><input id="n-e" type="number" step="any"></div>
   <div><label>SL</label><input id="n-sl" type="number" step="any"></div><div><label>TP</label><input id="n-tp" type="number" step="any"></div></div>
   <div class="row"><div><label>Ảnh chart H4</label><input type="file" id="n-h4" accept="image/*"></div><div><label>Ảnh chart M15</label><input type="file" id="n-m15" accept="image/*"></div></div>
   <label>Ghi chú lý do vào lệnh</label><textarea id="n-note" placeholder="Vì sao bạn vào lệnh này?"></textarea>
   <button class="pri" id="n-save">Lưu lệnh & nhờ AI kiểm tra kỷ luật</button><div id="n-out"></div></div>`;$("#n-save").onclick=addTrade}
+ if(tab==="new"){const sel=$("#n-setup"),v=sel.dataset.i?sel.value:(S.setups[0]?String(S.setups[0].id):"");sel.dataset.i=1;sel.innerHTML='<option value="">(Không dùng setup)</option>'+S.setups.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");sel.value=v}
  if(tab==="log"){$("#p-log").innerHTML=S.trades.length?[...S.trades].reverse().map(t=>{const rr=t.sl&&t.entry&&t.tp?(Math.abs(t.tp-t.entry)/Math.abs(t.entry-t.sl)).toFixed(2):"–";
-  return`<div class="card trade ${t.ai?.verdict||""}"><b>${esc(t.pair)} · ${esc(t.side)}</b> <span class="mut">${new Date(t.created_at).toLocaleString("vi-VN")}</span>
+  return`<div class="card trade ${t.ai?.verdict||""}"><b>${esc(t.pair)} · ${esc(t.side)}</b> ${t.setup_id?`<span class="chip on" style="padding:1px 9px;font-size:12px;cursor:default">${esc(S.setups.find(x=>x.id===t.setup_id)?.name||"")}</span>`:""} <span class="mut">${new Date(t.created_at).toLocaleString("vi-VN")}</span>
   <div class="mut">Entry ${esc(t.entry)} · SL ${esc(t.sl)} · TP ${esc(t.tp)} · RR ${rr}</div><p>${esc(t.note)}</p>
   <div class="imgs">${[t.h4_path,t.m15_path].filter(Boolean).map(p=>`<img data-p="${esc(p)}" alt="chart">`).join("")}</div>${alertHTML(t.ai)}
   <label>Kết quả</label><select data-id="${t.id}" class="res" style="max-width:160px">${[["open","Đang mở"],["win","Thắng"],["loss","Thua"]].map(([v,l])=>`<option value="${v}" ${t.result===v?"selected":""}>${l}</option>`).join("")}</select></div>`}).join(""):'<div class="card mut">Chưa có lệnh nào.</div>';
@@ -114,15 +107,41 @@ function render(){
   document.querySelectorAll("img[data-p]").forEach(async i=>{const r=await sb.storage.from("charts").createSignedUrl(i.dataset.p,3600);if(r.data)i.src=r.data.signedUrl})}}
 async function addTrade(){if(busy)return;const g=id=>$(id).value;
  const t={pair:g("#n-pair").toUpperCase()||"?",side:g("#n-side"),entry:+g("#n-e"),sl:+g("#n-sl"),tp:+g("#n-tp")||null,note:g("#n-note"),result:"open"};
+ const su=S.setups.find(x=>String(x.id)===g("#n-setup"));t.setup_id=su?su.id:null;
  if(!t.entry||!t.sl)return $("#n-out").innerHTML='<div class="alert yellow">Nhập tối thiểu Entry và SL.</div>';
  busy=true;$("#n-save").disabled=true;$("#n-out").innerHTML='<p class="mut">🤖 AI đang đối chiếu với setup chuẩn…</p>';
  try{const fs=[["h4",$("#n-h4").files[0]],["m15",$("#n-m15").files[0]]].filter(x=>x[1]),im=[];
   for(const[k,f]of fs){const c=await compress(f);im.push(c);const path=`${uid}/${Date.now()}-${k}.jpg`;
    const up=await sb.storage.from("charts").upload(path,c.blob,{contentType:"image/jpeg"});if(!up.error)t[k+"_path"]=path}
-  try{t.ai=(await api({mode:"trade",images:im.map(({media_type,data})=>({media_type,data})),rules:S.rules,trade:t})).ai}
+  try{t.ai=(await api({mode:"trade",images:im.map(({media_type,data})=>({media_type,data})),rules:su?su.body:"",trade:t})).ai}
   catch(e){t.ai={verdict:"yellow",score:50,summary:"Không thể phân tích AI ("+e.message+"). Lệnh vẫn được lưu.",violations:[]}}
   const r=await sb.from("trades").insert(t).select().single();if(r.error)throw r.error;S.trades.push(r.data);$("#n-out").innerHTML=alertHTML(t.ai)
  }catch(e){$("#n-out").innerHTML=`<div class="alert red">Lỗi lưu lệnh: ${esc(e.message)}</div>`}
  busy=false;$("#n-save").disabled=false}
+function renderRules(){
+ if(!editId)editId=S.setups.length?String(S.setups[0].id):"new";
+ const cur=S.setups.find(x=>String(x.id)===editId);
+ $("#p-rules").innerHTML=`<div class="card"><h2>Các setup của bạn</h2><div>${S.setups.map(x=>`<button class="chip ${String(x.id)===editId?"on":""}" data-id="${x.id}">${esc(x.name)}</button>`).join("")}<button class="chip ${editId==="new"?"on":""}" data-id="new">+ Setup mới</button></div></div>
+ <div class="card"><h2>${cur?"Sửa setup":"Tạo setup mới"}</h2><label>Tên setup</label><input id="s-name" placeholder="VD: Pullback EMA50, Breakout phiên London…">
+ <p class="mut" style="margin-bottom:0">Nhập rule bằng văn bản, hoặc upload ảnh chart mẫu (H4, M15) để AI viết rule.</p>
+ <div class="row"><div><label>Ảnh mẫu H4</label><input type="file" id="rh4" accept="image/*"></div><div><label>Ảnh mẫu M15</label><input type="file" id="rm15" accept="image/*"></div></div>
+ <button class="sec" id="rgen" style="margin-top:10px">🤖 AI viết rule từ ảnh</button><label>Quy tắc (có thể chỉnh sửa)</label>
+ <textarea id="rtxt" style="min-height:220px" placeholder="VD: H4 xu hướng tăng, chờ pullback về EMA50, M15 có nến đảo chiều, RR tối thiểu 1:2…"></textarea>
+ <button class="pri" id="rsave">${cur?"Lưu thay đổi":"Tạo setup"}</button> ${cur?'<button class="sec" id="rdel" style="margin-top:12px">Xoá setup</button>':""} <span id="rmsg" class="mut"></span></div>`;
+ $("#s-name").value=cur?.name||"";$("#rtxt").value=cur?.body||"";
+ document.querySelectorAll(".chip[data-id]").forEach(b=>b.onclick=()=>{editId=b.dataset.id;renderRules()});
+ $("#rsave").onclick=async()=>{const name=$("#s-name").value.trim(),body=$("#rtxt").value;if(!name)return $("#rmsg").textContent="Hãy đặt tên cho setup.";
+  if(cur){const r=await sb.from("setups").update({name,body}).eq("id",cur.id);if(r.error)return $("#rmsg").textContent=r.error.message;cur.name=name;cur.body=body;renderRules();$("#rmsg").textContent="Đã lưu ✓"}
+  else{const r=await sb.from("setups").insert({name,body}).select().single();if(r.error)return $("#rmsg").textContent=r.error.message;S.setups.push(r.data);editId=String(r.data.id);renderRules();$("#rmsg").textContent="Đã tạo ✓"}};
+ if(cur)$("#rdel").onclick=async()=>{if(!confirm('Xoá setup "'+cur.name+'"? Các lệnh cũ vẫn được giữ nhưng không còn gắn setup.'))return;
+  const r=await sb.from("setups").delete().eq("id",cur.id);if(r.error)return $("#rmsg").textContent=r.error.message;
+  S.setups=S.setups.filter(x=>x.id!==cur.id);S.trades.forEach(t=>{if(t.setup_id===cur.id)t.setup_id=null});editId=null;renderRules()};
+ $("#rgen").onclick=async()=>{const f=[$("#rh4").files[0],$("#rm15").files[0]].filter(Boolean);if(!f.length)return $("#rmsg").textContent="Hãy chọn ít nhất một ảnh.";
+  $("#rmsg").textContent="AI đang phân tích…";try{const im=await Promise.all(f.map(compress));const r=await api({mode:"rules",images:im.map(({media_type,data})=>({media_type,data}))});
+  $("#rtxt").value=r.text;$("#rmsg").textContent="Xem lại rồi bấm Lưu."}catch(e){$("#rmsg").textContent="Lỗi: "+e.message}}}
+function setupTable(){if(S.setups.length<2)return"";
+ const rows=S.setups.map(s=>{const t=S.trades.filter(x=>x.setup_id===s.id),d=t.filter(x=>x.result==="win"||x.result==="loss"),w=d.filter(x=>x.result==="win").length,sc=t.filter(x=>x.ai&&typeof x.ai.score==="number");
+  return`<tr><td>${esc(s.name)}</td><td>${t.length}</td><td>${d.length?Math.round(w/d.length*100)+"%":"–"}</td><td>${sc.length?Math.round(sc.reduce((a,x)=>a+x.ai.score,0)/sc.length):"–"}</td></tr>`}).join("");
+ return`<div class="card overflow"><h2>So sánh các setup</h2><table style="width:100%;border-collapse:collapse;text-align:left"><tr class="mut"><th>Setup</th><th>Số lệnh</th><th>Win-rate</th><th>Kỷ luật TB</th></tr>${rows}</table></div>`}
 boot().catch(e=>{$("#who").textContent="Chưa cấu hình biến môi trường Supabase"});
 </script></body></html>
