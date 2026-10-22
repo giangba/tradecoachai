@@ -52,6 +52,24 @@ module.exports=async(req,res)=>{
   if(!u.ok)return res.status(401).json({error:"Chưa đăng nhập"});
   const {mode,images=[],rules,trade,setups,stats,trades}=req.body||{};
   const imgs=images.slice(0,2);
+  if(mode==="strategy"){const d=String(req.body.description||"").slice(0,4000),tf=String(req.body.tf||"M15");
+   const r=await ask(`Bạn là kỹ sư backtest Forex. Chuyển mô tả phương pháp giao dịch của trader thành quy tắc có cấu trúc để một engine backtest chạy trên dữ liệu OHLC (khung ${tf}). Trả lời tiếng Việt cho các trường văn bản.
+MÔ TẢ CỦA TRADER:
+${d}
+ENGINE CHỈ HỖ TRỢ:
+- Chỉ báo (indicators), mỗi cái có "id" (chữ/số/gạch dưới, không trùng open/high/low/close): {"type":"sma|ema|rsi|atr","period":N} (tính trên close; atr theo Wilder), {"type":"highest|lowest","period":N} (đỉnh/đáy của N nến TRƯỚC, không gồm nến hiện tại – dùng cho phá vỡ), {"type":"macd|macd_signal","fast":12,"slow":26,"signal":9}, {"type":"bb_upper|bb_lower","period":20,"mult":2}.
+- Điều kiện vào lệnh: mảng {"left","op","right"}, TẤT CẢ phải đúng (AND) tại lúc đóng nến, vào lệnh ở giá mở cửa nến kế tiếp. op: ">","<",">=","<=","crosses_above","crosses_below". left/right là: "open","high","low","close", id chỉ báo, hoặc số. Có thể lùi nến bằng hậu tố [n], ví dụ "close[1]", "ema20[2]".
+- entry_long (mua) và entry_short (bán). direction: "long","short" hoặc "both".
+- stop: {"type":"atr","value":bội số ATR14} hoặc {"type":"pips","value":N}. take_profit: {"type":"rr","value":R} hoặc {"type":"atr","value":bội số} hoặc {"type":"pips","value":N}. max_bars: số nến tối đa giữ lệnh (0 = không giới hạn). Nếu dùng ATR cho stop/TP, thêm chỉ báo {"id":"atr","type":"atr","period":14}.
+KHÔNG HỖ TRỢ: phán đoán bằng mắt (hỗ trợ/kháng cự vẽ tay, mô hình nến/giá phức tạp, sóng), tin tức, nhiều vị thế, dời SL, chốt từng phần, đa khung thời gian thật. Với đa khung (vd xu hướng H4 + vào lệnh M15), hãy xấp xỉ bằng chỉ báo chu kỳ dài hơn trên dữ liệu ${tf} và GHI RÕ trong unsupported_notes. Phần không mô hình hoá được thì liệt kê trong unsupported_notes và bỏ qua; tuyệt đối không bịa thêm điều kiện trader không nói. Nếu không có điều kiện vào lệnh nào đo được thì supported=false.
+Chỉ trả JSON thuần: {"supported":true|false,"reason":"nếu false thì vì sao","name":"tên ngắn của phương pháp","rules_text":"quy tắc rõ ràng dạng gạch đầu dòng (vào lệnh, SL, TP, điều kiện không vào lệnh)","unsupported_notes":["..."],"spec":{"direction":"both","indicators":[],"entry_long":[],"entry_short":[],"stop":{"type":"atr","value":1.5},"take_profit":{"type":"rr","value":2},"max_bars":0}}`,[],true);
+   return res.json({plan:JSON.parse(r.text.match(/\{[\s\S]*\}/)[0]),provider:r.provider})}
+  if(mode==="bt_review"){
+   const r=await ask(`Bạn là chuyên gia đánh giá chiến lược giao dịch Forex, trung thực và thận trọng. Trả lời tiếng Việt.
+Đánh giá kết quả backtest dưới đây (do engine chạy, không phải bạn tính). R = bội số rủi ro: thắng = +RR, thua = -1R, đã trừ spread/phí. Giả định: vào lệnh ở mở cửa nến kế tiếp; nếu SL và TP cùng nằm trong một nến thì tính SL (bi quan); một vị thế tại một thời điểm; không có trượt giá, swap hay phí ngoài spread đã nhập. In-sample = 70% dữ liệu đầu, out-of-sample = 30% sau.
+${JSON.stringify(req.body.payload)}
+Hãy nhận định thẳng thắn: số lệnh đủ để tin chưa (dưới 100 lệnh thì độ tin cậy thấp), in-sample so với out-of-sample có dấu hiệu overfitting không, kỳ vọng và profit factor có đủ biên an toàn sau chi phí không, drawdown/chuỗi thua có chịu được không, phần nào của phương pháp bị bỏ qua (unsupported) làm kết quả kém đáng tin. Không hứa hẹn lợi nhuận. Chỉ trả JSON thuần: {"verdict":"promising|needs_work|reject","summary":"2-3 câu","strengths":["..."],"risks":["..."],"suggestions":["đề xuất cụ thể để cải thiện hoặc kiểm chứng thêm, tối đa 5"]}.`,[],true);
+   return res.json({review:JSON.parse(r.text.match(/\{[\s\S]*\}/)[0]),provider:r.provider})}
   if(mode==="insights"){
    const r=await ask(`Bạn là coach giao dịch Forex giàu kinh nghiệm, nói thẳng nhưng xây dựng. Trả lời tiếng Việt.
 Phân tích lịch sử giao dịch của một trader để giúp họ TĂNG WIN-RATE và CẢI THIỆN TỈ LỆ RR.
