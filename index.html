@@ -36,13 +36,13 @@ table th,table td{padding:6px 8px}
 <label>Email</label><input id="a-mail" type="email"><label>Mật khẩu (≥6 ký tự)</label><input id="a-pw" type="password">
 <button class="pri" id="a-in">Đăng nhập</button> <button class="sec" id="a-up">Đăng ký</button><p id="a-msg" class="mut"></p></div></main>
 <div id="app" class="hide"><nav id="nav"></nav><main>
-<section id="p-dash"></section><section id="p-rules" class="hide"></section><section id="p-new" class="hide"></section><section id="p-log" class="hide"></section><section id="p-ana" class="hide"></section></main></div>
+<section id="p-dash"></section><section id="p-rules" class="hide"></section><section id="p-new" class="hide"></section><section id="p-log" class="hide"></section><section id="p-ana" class="hide"></section><section id="p-bt" class="hide"></section></main></div>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const tIds=t=>t.setup_ids?.length?t.setup_ids:(t.setup_id?[t.setup_id]:[]);
 let selS=null,fSetup="",editId=null,tok,sb,S={setups:[],trades:[]},uid,tab="dash",busy=false;
-const tabs={dash:"Dashboard",rules:"Setup chuẩn",new:"+ Lệnh mới",log:"Nhật ký",ana:"Phân tích"};
+const tabs={dash:"Dashboard",rules:"Setup chuẩn",new:"+ Lệnh mới",log:"Nhật ký",ana:"Phân tích",bt:"Backtest"};
 $("#nav").innerHTML=Object.entries(tabs).map(([k,v])=>`<button data-k="${k}">${v}</button>`).join("");
 $("#nav").onclick=e=>{if(e.target.dataset.k)show(e.target.dataset.k)};
 function show(k){tab=k;for(const t in tabs)$("#p-"+t).classList.toggle("hide",t!==k);
@@ -97,6 +97,7 @@ function render(){
   const f=$("#d-setup");if(f)f.onchange=()=>{fSetup=f.value;render()}}
  if(tab==="rules")renderRules();
  if(tab==="ana")renderAna();
+ if(tab==="bt")renderBT();
  if(tab==="new"&&!$("#p-new").dataset.r){$("#p-new").dataset.r=1;
   $("#p-new").innerHTML=`<div class="card"><h2>Thêm lệnh mới</h2><div class="row"><div><label>Cặp tiền</label><input id="n-pair" placeholder="EURUSD"></div>
   <div><label>Hướng</label><select id="n-side"><option>BUY</option><option>SELL</option></select></div><div><label>Entry</label><input id="n-e" type="number" step="any"></div>
@@ -202,5 +203,144 @@ async function runAna(all,s,B){if(anaBusy)return;anaBusy=true;$("#a-btn").disabl
   anaRep=await api({mode:"insights",stats,trades});$("#a-out").innerHTML=repHTML(anaRep)}
  catch(e){$("#a-out").innerHTML=`<div class="alert red">Lỗi: ${esc(e.message)}</div>`}
  anaBusy=false;$("#a-btn").disabled=false}
+// BT-ENGINE-START
+const BT_PRICE=["open","high","low","close"],BT_OPS=[">","<",">=","<=","crosses_above","crosses_below"],BT_TYPES=["sma","ema","rsi","atr","highest","lowest","macd","macd_signal","bb_upper","bb_lower"];
+function parseCSV(txt){const L=txt.trim().split(/\r?\n/).filter(x=>x.trim());if(L.length<50)throw new Error("File quá ngắn (cần ít nhất 50 dòng nến).");
+ const sep=L[0].includes("\t")?"\t":(L[0].includes(";")&&!L[0].includes(",")?";":",");
+ const hd=L[0].split(sep).map(x=>x.trim().toLowerCase().replace(/[<>"']/g,""));
+ const io=hd.indexOf("open"),hasH=io>=0&&hd.includes("high")&&hd.includes("low")&&hd.includes("close");
+ let oi,hi,li,ci,lab;
+ if(hasH){oi=io;hi=hd.indexOf("high");li=hd.indexOf("low");ci=hd.indexOf("close");lab=[...Array(io).keys()]}
+ else{const c=L[0].split(sep).length,s=c>=7?2:1;oi=s;hi=s+1;li=s+2;ci=s+3;lab=[...Array(s).keys()]}
+ const rows=[];
+ for(let k=hasH?1:0;k<L.length;k++){const p=L[k].split(sep).map(x=>x.trim().replace(/["']/g,""));
+  const o=+p[oi],h=+p[hi],l=+p[li],c=+p[ci];if(![o,h,l,c].every(isFinite)||p[oi]===""||h<l)continue;
+  let t=lab.map(x=>p[x]).join(" ");if(/^\d{9,10}$/.test(t))t=new Date(+t*1000).toISOString().slice(0,16).replace("T"," ");
+  rows.push({t,open:o,high:h,low:l,close:c})}
+ if(rows.length<50)throw new Error("Không đọc được dữ liệu OHLC. Cần cột open, high, low, close (hoặc định dạng MT4: date,time,O,H,L,C,vol).");
+ const a=rows[0].t,b=rows[rows.length-1].t;if(a>b&&!(+a<+b))rows.reverse();return rows}
+function calcInd(bars,d){const n=bars.length,c=bars.map(b=>b.close),N=()=>new Array(n).fill(NaN),p=d.period||14;
+ const ema=(a,q)=>{const r=N(),k=2/(q+1);let prev=NaN,cnt=0,sum=0;for(let i=0;i<n;i++){if(isNaN(a[i]))continue;if(isNaN(prev)){cnt++;sum+=a[i];if(cnt===q){prev=sum/q;r[i]=prev}}else{prev=a[i]*k+prev*(1-k);r[i]=prev}}return r};
+ const sma=(a,q)=>{const r=N();let s=0;for(let i=0;i<n;i++){s+=a[i];if(i>=q)s-=a[i-q];if(i>=q-1)r[i]=s/q}return r};
+ switch(d.type){
+  case"sma":return sma(c,p);case"ema":return ema(c,p);
+  case"rsi":{const r=N();let ag=0,al=0;for(let i=1;i<n;i++){const ch=c[i]-c[i-1],g=Math.max(ch,0),l=Math.max(-ch,0);
+    if(i<=p){ag+=g/p;al+=l/p;if(i===p)r[i]=al===0?100:100-100/(1+ag/al)}else{ag=(ag*(p-1)+g)/p;al=(al*(p-1)+l)/p;r[i]=al===0?100:100-100/(1+ag/al)}}return r}
+  case"atr":{const r=N();let a=0;for(let i=0;i<n;i++){const b=bars[i],tr=i?Math.max(b.high-b.low,Math.abs(b.high-c[i-1]),Math.abs(b.low-c[i-1])):b.high-b.low;
+    if(i<p){a+=tr/p;if(i===p-1)r[i]=a}else{a=(a*(p-1)+tr)/p;r[i]=a}}return r}
+  case"highest":case"lowest":{const r=N(),hi=d.type==="highest";for(let i=p;i<n;i++){let v=hi?-Infinity:Infinity;for(let j=i-p;j<i;j++)v=hi?Math.max(v,bars[j].high):Math.min(v,bars[j].low);r[i]=v}return r}
+  case"macd":case"macd_signal":{const f=ema(c,d.fast||12),s=ema(c,d.slow||26),m=f.map((x,i)=>x-s[i]);return d.type==="macd"?m:ema(m,d.signal||9)}
+  case"bb_upper":case"bb_lower":{const m=sma(c,p),r=N(),k=d.mult||2;for(let i=p-1;i<n;i++){let v=0;for(let j=i-p+1;j<=i;j++)v+=(c[j]-m[i])**2;const sd=Math.sqrt(v/p);r[i]=d.type==="bb_upper"?m[i]+k*sd:m[i]-k*sd}return r}}
+ return N()}
+function btValidate(sp){if(!sp||typeof sp!=="object")throw new Error("Thiếu spec.");
+ const s=JSON.parse(JSON.stringify(sp));s.indicators=s.indicators||[];s.direction=s.direction||"both";
+ if(!["long","short","both"].includes(s.direction))throw new Error("direction phải là long/short/both");
+ const ids=new Set();
+ s.indicators.forEach(d=>{if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(d.id||"")||BT_PRICE.includes(d.id))throw new Error("id chỉ báo không hợp lệ: "+d.id);
+  if(ids.has(d.id))throw new Error("id chỉ báo bị trùng: "+d.id);ids.add(d.id);
+  if(!BT_TYPES.includes(d.type))throw new Error("Loại chỉ báo chưa hỗ trợ: "+d.type);
+  if(d.id==="atr"&&d.type!=="atr")throw new Error('id "atr" chỉ dành cho chỉ báo ATR');
+  ["period","fast","slow","signal","mult"].forEach(k=>{if(d[k]!=null){d[k]=Number(d[k]);if(!(d[k]>0)||d[k]>5000)throw new Error("Tham số "+k+" của "+d.id+" không hợp lệ")}})});
+ const opx=x=>{if(typeof x==="string"&&x.trim()!==""&&isFinite(Number(x)))x=Number(x);
+  if(typeof x==="number"&&isFinite(x))return x;
+  const m=typeof x==="string"&&/^([A-Za-z_][A-Za-z0-9_]*)(?:\[(\d{1,3})\])?$/.exec(x);
+  if(!m||!(BT_PRICE.includes(m[1])||ids.has(m[1])||m[1]==="atr"))throw new Error("Toán hạng không hợp lệ: "+JSON.stringify(x));return x};
+ for(const k of["entry_long","entry_short"]){s[k]=s[k]||[];s[k].forEach(c=>{if(!BT_OPS.includes(c.op))throw new Error("Toán tử chưa hỗ trợ: "+c.op);c.left=opx(c.left);c.right=opx(c.right)})}
+ if(s.direction!=="short"&&!s.entry_long.length)throw new Error("Thiếu điều kiện vào lệnh BUY (entry_long).");
+ if(s.direction!=="long"&&!s.entry_short.length)throw new Error("Thiếu điều kiện vào lệnh SELL (entry_short).");
+ const ck=(t,types,nm)=>{if(!t||!types.includes(t.type)||!(Number(t.value)>0))throw new Error("Cấu hình "+nm+" không hợp lệ.");t.value=Number(t.value)};
+ ck(s.stop,["atr","pips"],"stop");ck(s.take_profit,["rr","atr","pips"],"take_profit");s.max_bars=Math.max(0,Math.floor(Number(s.max_bars)||0));return s}
+function btMetrics(t){const n=t.length;if(!n)return{n:0};const w=t.filter(x=>x.r>0),l=t.filter(x=>x.r<=0),sp=w.reduce((s,x)=>s+x.r,0),sn=-l.reduce((s,x)=>s+x.r,0);
+ let eq=0,pk=0,dd=0,cur=0,mx=0;t.forEach(x=>{eq+=x.r;pk=Math.max(pk,eq);dd=Math.max(dd,pk-eq);if(x.r<=0){cur++;mx=Math.max(mx,cur)}else cur=0});
+ return{n,wr:w.length/n*100,avgW:w.length?sp/w.length:0,avgL:l.length?-sn/l.length:0,exp:(sp-sn)/n,pf:sn?sp/sn:Infinity,tot:sp-sn,dd,streak:mx}}
+function btRun(bars,spec,o){const n=bars.length,ind={};spec.indicators.forEach(d=>ind[d.id]=calcInd(bars,d));
+ if(!ind.atr)ind.atr=calcInd(bars,{type:"atr",period:14});
+ const get=(x,i)=>{if(typeof x==="number")return x;const m=/^([A-Za-z_]\w*)(?:\[(\d+)\])?$/.exec(x),j=i-(+m[2]||0);if(j<0)return NaN;return BT_PRICE.includes(m[1])?bars[j][m[1]]:ind[m[1]][j]};
+ const test=(c,i)=>{const L=get(c.left,i),R=get(c.right,i);if(!isFinite(L)||!isFinite(R))return false;
+  if(c.op===">")return L>R;if(c.op==="<")return L<R;if(c.op===">=")return L>=R;if(c.op==="<=")return L<=R;
+  const Lp=get(c.left,i-1),Rp=get(c.right,i-1);if(!isFinite(Lp)||!isFinite(Rp))return false;
+  return c.op==="crosses_above"?(Lp<=Rp&&L>R):(Lp>=Rp&&L<R)};
+ const trades=[];let i=1;
+ while(i<n-1){let dir=0;
+  if(spec.direction!=="short"&&spec.entry_long.length&&spec.entry_long.every(c=>test(c,i)))dir=1;
+  else if(spec.direction!=="long"&&spec.entry_short.length&&spec.entry_short.every(c=>test(c,i)))dir=-1;
+  if(!dir){i++;continue}
+  const a=ind.atr[i],entry=bars[i+1].open,dist=t=>t.type==="pips"?t.value*o.pip:t.value*a,sd=dist(spec.stop);
+  if(!isFinite(sd)||sd<=0){i++;continue}
+  const td=spec.take_profit.type==="rr"?sd*spec.take_profit.value:dist(spec.take_profit);
+  if(!isFinite(td)||td<=0){i++;continue}
+  const sl=entry-dir*sd,tp=entry+dir*td;let exit=null,reason="",j=i+1;
+  for(;j<n;j++){const b=bars[j],hS=dir===1?b.low<=sl:b.high>=sl,hT=dir===1?b.high>=tp:b.low<=tp;
+   if(hS){exit=sl;reason=hT?"SL (cùng nến TP)":"SL";break}
+   if(hT){exit=tp;reason="TP";break}
+   if(spec.max_bars&&j-i>=spec.max_bars){exit=b.close;reason="Hết thời gian";break}}
+  if(exit===null){j=n-1;exit=bars[j].close;reason="Hết dữ liệu"}
+  trades.push({i:i+1,t:bars[i+1].t,x:bars[j].t,dir,entry,exit,r:dir*(exit-entry)/sd-o.spread*o.pip/sd,reason});i=Math.max(j,i+1)}
+ const cut=Math.floor(n*0.7),is=trades.filter(x=>x.i<cut),oos=trades.filter(x=>x.i>=cut);let c=0;
+ return{trades,all:btMetrics(trades),is:btMetrics(is),oos:btMetrics(oos),eq:trades.map(x=>c+=x.r),cutTrade:is.length,bars:n}}
+// BT-ENGINE-END
+let btBars=null,btPlan=null,btRes=null,btRev=null,btBusy=false,btOpt={};
+function btEquity(r){const e=r.eq;if(e.length<2)return"";const W=640,H=170,p=26,mn=Math.min(0,...e),mx=Math.max(0,...e),rg=(mx-mn)||1,X=i=>p+i*(W-2*p)/(e.length-1),Y=v=>H-p-(v-mn)/rg*(H-2*p);
+ const cx=r.cutTrade>0&&r.cutTrade<e.length?X(r.cutTrade-1):null;
+ return`<div class="overflow"><svg viewBox="0 0 ${W} ${H}" style="min-width:420px;width:100%"><line x1="${p}" x2="${W-p}" y1="${Y(0)}" y2="${Y(0)}" stroke="#2a2e39"/>
+ <text x="0" y="${Y(0)+4}" fill="#787b86" font-size="10">0R</text><text x="0" y="${Y(mx)+4}" fill="#787b86" font-size="10">${mx.toFixed(0)}R</text>
+ ${cx?`<line x1="${cx}" x2="${cx}" y1="${p-8}" y2="${H-p}" stroke="#f0b90b" stroke-dasharray="4"/><text x="${cx+4}" y="${p-2}" fill="#f0b90b" font-size="10">out-of-sample →</text>`:""}
+ <polyline fill="none" stroke="${e[e.length-1]>=0?"#26a69a":"#ef5350"}" stroke-width="2" points="${e.map((v,i)=>X(i)+","+Y(v)).join(" ")}"/></svg></div>`}
+function btShow(){const r=btRes,m=r.all,fx=(x,d=2)=>x==null||!isFinite(x)?"∞":x.toFixed(d),sg=x=>(x>0?"+":"")+fx(x);
+ const warn=[];if(m.n<30)warn.push(`Chỉ có <b>${m.n}</b> lệnh – mẫu quá nhỏ, kết quả chưa đáng tin (nên có 100+ lệnh).`);
+ if(r.is.n>=10&&r.oos.n>=5&&r.is.exp>0&&r.oos.exp<=0)warn.push("<b>Dấu hiệu overfitting:</b> phần dữ liệu đầu có lãi nhưng phần sau (out-of-sample) không còn lãi.");
+ const row=(t,x)=>`<tr style="border-top:1px solid var(--line)"><td>${t}</td><td>${x.n}</td><td>${x.n?fx(x.wr,0)+"%":"–"}</td><td class="${x.exp>0?"up":x.exp<0?"dn":""}">${x.n?sg(x.exp):"–"}</td><td>${x.n?fx(x.pf):"–"}</td><td class="${x.tot>0?"up":x.tot<0?"dn":""}">${x.n?sg(x.tot):"–"}</td></tr>`;
+ $("#bt-res").innerHTML=!m.n?'<div class="alert yellow">Không có lệnh nào được kích hoạt trên dữ liệu này. Kiểm tra lại quy tắc (điều kiện có quá khắt khe không?) hoặc dữ liệu.</div>':`
+ <div class="card"><h2>Kết quả backtest</h2><p class="mut" style="font-size:12px">${r.bars.toLocaleString()} nến · ${esc(btBars[0].t)} → ${esc(btBars[btBars.length-1].t)} · pip ${btOpt.pip} · spread ${btOpt.spread} pip</p>
+ <div class="grid"><div class="kpi"><small>Số lệnh</small><b>${m.n}</b></div><div class="kpi"><small>Win-rate</small><b>${fx(m.wr,0)}%</b></div>
+ <div class="kpi"><small>Kỳ vọng (R/lệnh)</small><b class="${m.exp>0?"up":"dn"}">${sg(m.exp)}</b></div><div class="kpi"><small>Profit factor</small><b class="${m.pf>1?"up":"dn"}">${fx(m.pf)}</b></div>
+ <div class="kpi"><small>Tổng R</small><b class="${m.tot>0?"up":"dn"}">${sg(m.tot)}</b></div><div class="kpi"><small>Drawdown tối đa</small><b class="dn">-${fx(m.dd,1)}R</b></div>
+ <div class="kpi"><small>Thắng TB / Thua TB</small><b style="font-size:18px">${sg(m.avgW)} / ${fx(m.avgL)}</b></div><div class="kpi"><small>Chuỗi thua dài nhất</small><b>${m.streak}</b></div></div>
+ ${warn.map(w=>`<div class="alert yellow" style="font-weight:400">⚠️ ${w}</div>`).join("")}</div>
+ <div class="card"><h2>Đường vốn (R tích luỹ)</h2>${btEquity(r)}</div>
+ <div class="card overflow"><h2>In-sample (70% đầu) vs Out-of-sample (30% sau)</h2><table style="width:100%;border-collapse:collapse;text-align:left;min-width:420px"><tr class="mut"><th></th><th>Lệnh</th><th>Win-rate</th><th>Kỳ vọng R</th><th>PF</th><th>Tổng R</th></tr>${row("In-sample",r.is)}${row("Out-of-sample",r.oos)}</table></div>
+ <div class="card overflow"><h2>25 lệnh gần nhất</h2><table style="width:100%;border-collapse:collapse;text-align:left;min-width:520px"><tr class="mut"><th>Vào</th><th>Hướng</th><th>Entry</th><th>Exit</th><th>R</th><th>Lý do thoát</th></tr>${r.trades.slice(-25).reverse().map(t=>`<tr style="border-top:1px solid var(--line)"><td>${esc(t.t)}</td><td>${t.dir>0?"BUY":"SELL"}</td><td>${t.entry.toFixed(5)}</td><td>${t.exit.toFixed(5)}</td><td class="${t.r>0?"up":"dn"}">${sg(t.r)}</td><td>${esc(t.reason)}</td></tr>`).join("")}</table></div>
+ <div class="card"><h2>🤖 Coach AI nhận xét kết quả</h2><button class="pri" id="bt-rev">Nhận xét backtest này</button><div id="bt-revout">${btRev?btRevHTML(btRev):""}</div></div>`;
+ if(m.n)$("#bt-rev").onclick=btReview}
+function btRevHTML(x){const r=x.review,V={promising:["✅ Có triển vọng","green"],needs_work:["⚠️ Cần cải thiện","yellow"],reject:["🚨 Chưa nên dùng","red"]}[r.verdict]||["⚠️ Cần cải thiện","yellow"];
+ const L=(t,a)=>a?.length?`<h3 style="font-size:14px;margin:12px 0 4px">${t}</h3><ul style="margin:0;padding-left:18px">${a.map(i=>`<li style="margin:4px 0">${esc(i)}</li>`).join("")}</ul>`:"";
+ return`<div class="alert ${V[1]}" style="margin-top:14px"><h3>${V[0]}</h3>${esc(r.summary)}${x.provider&&x.provider!=="gemini"?`<div class="mut" style="font-size:11px;font-weight:400">🔁 model dự phòng (${esc(x.provider)})</div>`:""}<div style="font-weight:400">${L("Điểm mạnh",r.strengths)}${L("Rủi ro / điểm cần lưu ý",r.risks)}${L("Đề xuất cải thiện",r.suggestions)}</div></div>`}
+async function btReview(){if(btBusy)return;btBusy=true;$("#bt-rev").disabled=true;$("#bt-revout").innerHTML='<p class="mut">🤖 AI đang nhận xét…</p>';
+ try{const cl=m=>m.n?{lenh:m.n,winrate_pct:+m.wr.toFixed(1),ky_vong_R:+m.exp.toFixed(3),profit_factor:isFinite(m.pf)?+m.pf.toFixed(2):null,tong_R:+m.tot.toFixed(1),max_dd_R:+m.dd.toFixed(1),chuoi_thua:m.streak,thang_tb_R:+m.avgW.toFixed(2),thua_tb_R:+m.avgL.toFixed(2)}:{lenh:0};
+  btRev=await api({mode:"bt_review",payload:{rules_text:btPlan.rules_text,spec:btPlan.spec,unsupported:btPlan.unsupported_notes,assumptions:{...btOpt,so_nen:btRes.bars,tu:btBars[0].t,den:btBars[btBars.length-1].t},tong:cl(btRes.all),in_sample:cl(btRes.is),out_of_sample:cl(btRes.oos)}});
+  $("#bt-revout").innerHTML=btRevHTML(btRev)}catch(e){$("#bt-revout").innerHTML=`<div class="alert red">Lỗi: ${esc(e.message)}</div>`}
+ btBusy=false;$("#bt-rev").disabled=false}
+function btExec(spec){try{const s=btValidate(spec);btPlan.spec=s;btRes=btRun(btBars,s,btOpt);btRev=null;btShow()}catch(e){$("#bt-res").innerHTML=`<div class="alert red">Lỗi quy tắc: ${esc(e.message)}</div>`}}
+function btPlanHTML(){const p=btPlan;return`<div class="card"><h2>AI hiểu phương pháp: ${esc(p.name||"")}</h2><div style="white-space:pre-wrap">${esc(p.rules_text||"")}</div>
+ ${p.unsupported_notes?.length?`<div class="alert yellow" style="font-weight:400"><b>Phần không thể backtest tự động (đã bỏ qua / làm gần đúng):</b><ul>${p.unsupported_notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
+ <details><summary class="mut" style="cursor:pointer">Quy tắc dạng JSON (có thể sửa rồi chạy lại)</summary><textarea id="bt-json" style="min-height:200px;font-family:monospace;font-size:12px">${esc(JSON.stringify(p.spec,null,1))}</textarea>
+ <button class="sec" id="bt-rerun" style="margin-top:8px">Chạy lại với JSON đã sửa</button></details>
+ <button class="sec" id="bt-save" style="margin-top:12px">💾 Lưu thành setup chuẩn</button> <span id="bt-smsg" class="mut"></span></div>`}
+function renderBT(){
+ if(!$("#p-bt").dataset.r){$("#p-bt").dataset.r=1;
+  $("#p-bt").innerHTML=`<div class="card"><h2>Backtest phương pháp mới</h2><p class="mut">Mô tả phương pháp bằng chữ, upload dữ liệu giá (CSV) – AI chuyển thành quy tắc, hệ thống chạy backtest bằng thuật toán (AI không tự "đoán" kết quả).</p>
+  <label>Lấy mô tả từ setup có sẵn (tuỳ chọn)</label><select id="bt-pre"></select>
+  <label>Mô tả phương pháp giao dịch</label><textarea id="bt-desc" style="min-height:130px" placeholder="VD: Mua khi EMA20 cắt lên EMA50 và RSI14 > 50, SL = 1.5 ATR, TP = 2R. Bán ngược lại."></textarea>
+  <label>Dữ liệu giá CSV (cột time, open, high, low, close – xuất từ MT4/MT5/TradingView)</label><input type="file" id="bt-file" accept=".csv,.txt">
+  <div class="row"><div><label>Khung thời gian của dữ liệu</label><select id="bt-tf"><option>M5</option><option selected>M15</option><option>M30</option><option>H1</option><option>H4</option><option>D1</option></select></div>
+  <div><label>Pip size (để trống = tự nhận)</label><input id="bt-pip" type="number" step="any" placeholder="0.0001 / 0.01"></div><div><label>Spread + phí (pip/lệnh)</label><input id="bt-spread" type="number" step="any" value="1"></div></div>
+  <button class="pri" id="bt-run">Chuyển thành quy tắc & chạy backtest</button> <span id="bt-msg" class="mut"></span></div><div id="bt-plan"></div><div id="bt-res"></div>`;
+  $("#bt-pre").onchange=e=>{const s=S.setups.find(x=>String(x.id)===e.target.value);if(s)$("#bt-desc").value=s.body};
+  $("#bt-run").onclick=btStart}
+ const v=$("#bt-pre").value;$("#bt-pre").innerHTML='<option value="">— Không chọn —</option>'+S.setups.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");$("#bt-pre").value=v}
+async function btStart(){if(btBusy)return;const msg=t=>$("#bt-msg").textContent=t,desc=$("#bt-desc").value.trim(),f=$("#bt-file").files[0];
+ if(!desc)return msg("Hãy mô tả phương pháp.");if(!f)return msg("Hãy chọn file CSV dữ liệu giá.");
+ btBusy=true;$("#bt-run").disabled=true;$("#bt-plan").innerHTML="";$("#bt-res").innerHTML="";
+ try{msg("Đang đọc dữ liệu…");let bars=parseCSV(await f.text());let note="";if(bars.length>150000){bars=bars.slice(-150000);note=" (chỉ dùng 150.000 nến gần nhất)"}
+  btBars=bars;const pip=+$("#bt-pip").value||(bars[bars.length-1].close>30?0.01:0.0001);btOpt={pip,spread:Math.max(0,+$("#bt-spread").value||0),tf:$("#bt-tf").value};
+  msg("AI đang chuyển phương pháp thành quy tắc…"+note);
+  const r=await api({mode:"strategy",description:desc,tf:btOpt.tf});btPlan=r.plan;btPlan.provider=r.provider;
+  if(!btPlan.supported){$("#bt-plan").innerHTML=`<div class="alert yellow"><b>Phương pháp này chưa thể backtest tự động.</b><br>${esc(btPlan.reason||"")}${btPlan.unsupported_notes?.length?`<ul>${btPlan.unsupported_notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}<div style="font-weight:400;margin-top:6px">Gợi ý: mô tả lại bằng điều kiện đo được (chỉ báo, mức giá, cắt nhau, phá đỉnh/đáy N nến…).</div></div>`;msg("");btBusy=false;$("#bt-run").disabled=false;return}
+  $("#bt-plan").innerHTML=btPlanHTML();
+  $("#bt-rerun").onclick=()=>{try{btPlan.spec=JSON.parse($("#bt-json").value)}catch(e){return $("#bt-res").innerHTML='<div class="alert red">JSON không hợp lệ: '+esc(e.message)+"</div>"}btExec(btPlan.spec)};
+  $("#bt-save").onclick=async()=>{const r=await sb.from("setups").insert({name:btPlan.name||"Setup từ backtest",body:btPlan.rules_text||desc}).select().single();if(r.error)return $("#bt-smsg").textContent=r.error.message;S.setups.push(r.data);$("#bt-smsg").textContent="Đã lưu vào tab Setup chuẩn ✓"};
+  msg("Đang chạy backtest…");await new Promise(x=>setTimeout(x,30));btExec(btPlan.spec);msg("")}
+ catch(e){msg("Lỗi: "+e.message)}
+ btBusy=false;$("#bt-run").disabled=false}
 boot().catch(e=>{$("#who").textContent="Chưa cấu hình biến môi trường Supabase"});
 </script></body></html>
