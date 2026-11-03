@@ -53,8 +53,8 @@ async function api(body){const ac=new AbortController(),tm=setTimeout(()=>ac.abo
  const raw=await r.text();let j;try{j=JSON.parse(raw)}catch(e){throw new Error("Server trả lỗi "+r.status+": "+raw.slice(0,120))}
  if(!r.ok)throw new Error(j.error||"Lỗi server "+r.status);return j}
  catch(e){throw new Error(e.name==="AbortError"?"Quá thời gian chờ (100s). Thử lại hoặc dùng ảnh nhỏ hơn.":e.message)}finally{clearTimeout(tm)}}
-function compress(file){return new Promise((ok,no)=>{const t=setTimeout(()=>no(new Error("Không đọc được ảnh (thử PNG/JPG)")),15000);
- const im=new Image();im.onload=()=>{try{const k=Math.min(1,1600/Math.max(im.width,im.height)),c=document.createElement("canvas");
+function compress(file,maxD=1600){return new Promise((ok,no)=>{const t=setTimeout(()=>no(new Error("Không đọc được ảnh (thử PNG/JPG)")),15000);
+ const im=new Image();im.onload=()=>{try{const k=Math.min(1,maxD/Math.max(im.width,im.height)),c=document.createElement("canvas");
  c.width=im.width*k;c.height=im.height*k;c.getContext("2d").drawImage(im,0,0,c.width,c.height);
  c.toBlob(bl=>{if(!bl){clearTimeout(t);return no(new Error("Không nén được ảnh"))}const f=new FileReader();
  f.onload=()=>{clearTimeout(t);ok({blob:bl,media_type:"image/jpeg",data:f.result.split(",")[1]})};f.onerror=()=>no(new Error("Lỗi đọc ảnh"));f.readAsDataURL(bl)},"image/jpeg",.82)}catch(e){clearTimeout(t);no(e)}};
@@ -71,10 +71,10 @@ async function enter(s){tok=s?.access_token;const on=!!s;$("#auth").classList.to
 $("#a-in").onclick=async()=>{const r=await sb.auth.signInWithPassword({email:$("#a-mail").value,password:$("#a-pw").value});if(r.error)$("#a-msg").textContent=r.error.message};
 $("#a-up").onclick=async()=>{const r=await sb.auth.signUp({email:$("#a-mail").value,password:$("#a-pw").value});$("#a-msg").textContent=r.error?r.error.message:(r.data.session?"":"Kiểm tra email để xác nhận tài khoản.")};
 $("#out").onclick=()=>sb.auth.signOut();
-function stats(){const t=S.trades.filter(x=>!fSetup||tIds(x).map(String).includes(fSetup)),done=t.filter(x=>x.result==="win"||x.result==="loss"),w=done.filter(x=>x.result==="win").length;
+function stats(){const t=S.trades.filter(x=>!fSetup||tIds(x).map(String).includes(fSetup)),done=t.filter(x=>["win","loss","be"].includes(x.result)),w=done.filter(x=>x.result==="win").length;
  const sc=t.filter(x=>x.ai&&typeof x.ai.score==="number"),avg=sc.length?Math.round(sc.reduce((a,x)=>a+x.ai.score,0)/sc.length):null;
  const comp=sc.filter(x=>x.ai.verdict==="green").length,tags={};t.forEach(x=>(x.ai?.violations||[]).forEach(v=>{const k=v.slice(0,60);tags[k]=(tags[k]||0)+1}));
- return{n:t.length,wr:done.length?Math.round(w/done.length*100):null,avg,comp:sc.length?Math.round(comp/sc.length*100):null,sc,tags}}
+ return{n:t.length,be:t.filter(x=>x.result==="be").length,wr:done.length?Math.round(w/done.length*100):null,avg,comp:sc.length?Math.round(comp/sc.length*100):null,sc,tags}}
 function chart(sc){if(sc.length<2)return'<p class="mut">Cần ít nhất 2 lệnh đã phân tích để vẽ biểu đồ.</p>';
  const W=640,H=160,p=24,pts=sc.map((x,i)=>[p+i*(W-2*p)/(sc.length-1),H-p-(x.ai.score/100)*(H-2*p),x.ai.verdict]),col={green:"#26a69a",red:"#ef5350",yellow:"#f0b90b"};
  return`<div class="overflow"><svg viewBox="0 0 ${W} ${H}" style="min-width:420px;width:100%">${[0,50,100].map(v=>{const y=H-p-v/100*(H-2*p);return`<line x1="${p}" x2="${W-p}" y1="${y}" y2="${y}" stroke="#2a2e39"/><text x="0" y="${y+4}" fill="#787b86" font-size="10">${v}</text>`}).join("")}
@@ -83,7 +83,7 @@ function alertHTML(a){if(!a)return'<div class="alert yellow">Chưa có phân tí
  const m={green:["✅ TUÂN THỦ SETUP","green"],red:["🚨 CẢNH BÁO ĐỎ – VI PHẠM KỶ LUẬT","red"],yellow:["⚠️ CẦN LƯU Ý","yellow"]}[a.verdict]||["⚠️ CẦN LƯU Ý","yellow"];
  return`<div class="alert ${m[1]}"><h3>${m[0]} · ${esc(a.score)}/100${a.fomo?" · FOMO":""}</h3>${esc(a.summary)}${a.provider&&a.provider!=="gemini"?`<div class="mut" style="font-size:11px;font-weight:400">🔁 Phân tích bởi model dự phòng (${esc(a.provider)})</div>`:""}${a.per_setup?.length>1?`<div style="font-weight:400;margin-top:8px">${a.per_setup.map(p=>`<div>${{green:"✅",red:"🚨",yellow:"⚠️"}[p.verdict]||"•"} <b>${esc(p.name)}</b> · ${esc(p.score)}/100 – ${esc(p.summary)}</div>`).join("")}</div>`:""}${a.violations?.length?`<ul>${a.violations.map(v=>`<li>${esc(v)}</li>`).join("")}</ul>`:""}</div>`}
 function setupTable(){if(S.setups.length<2)return"";
- const rows=S.setups.map(s=>{const t=S.trades.filter(x=>tIds(x).includes(s.id)),d=t.filter(x=>x.result==="win"||x.result==="loss"),w=d.filter(x=>x.result==="win").length,sc=t.filter(x=>x.ai&&typeof x.ai.score==="number");
+ const rows=S.setups.map(s=>{const t=S.trades.filter(x=>tIds(x).includes(s.id)),d=t.filter(x=>["win","loss","be"].includes(x.result)),w=d.filter(x=>x.result==="win").length,sc=t.filter(x=>x.ai&&typeof x.ai.score==="number");
   return`<tr><td>${esc(s.name)}</td><td>${t.length}</td><td>${d.length?Math.round(w/d.length*100)+"%":"–"}</td><td>${sc.length?Math.round(sc.reduce((a,x)=>a+x.ai.score,0)/sc.length):"–"}</td></tr>`}).join("");
  return`<div class="card overflow"><h2>So sánh các setup</h2><table style="width:100%;border-collapse:collapse;text-align:left"><tr class="mut"><th>Setup</th><th>Số lệnh</th><th>Win-rate</th><th>Kỷ luật TB</th></tr>${rows}</table></div>`}
 function render(){
@@ -91,7 +91,7 @@ function render(){
   <div class="card kpi"><small>Tổng số lệnh</small><b>${s.n}</b></div>
   <div class="card kpi"><small>Win-rate</small><b class="${s.wr>=50?"up":"dn"}">${s.wr??"–"}${s.wr!=null?"%":""}</b></div>
   <div class="card kpi"><small>Discipline Score TB</small><b class="${s.avg>=70?"up":s.avg>=40?"wn":"dn"}">${s.avg??"–"}</b></div>
-  <div class="card kpi"><small>Lệnh tuân thủ</small><b class="up">${s.comp??"–"}${s.comp!=null?"%":""}</b></div></div>
+  <div class="card kpi"><small>Lệnh hoà vốn (BE)</small><b>${s.be}</b></div><div class="card kpi"><small>Lệnh tuân thủ</small><b class="up">${s.comp??"–"}${s.comp!=null?"%":""}</b></div></div>
   <div class="card"><h2>Discipline Score theo thời gian</h2>${chart(s.sc)}</div>
   ${fSetup?"":setupTable()}<div class="card"><h2>Lỗi thường gặp</h2>${Object.keys(s.tags).length?Object.entries(s.tags).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,v])=>`<div style="margin:8px 0">${esc(k)} <span class="mut">×${v}</span><div class="bar"><i style="width:${v/Math.max(...Object.values(s.tags))*100}%"></i></div></div>`).join(""):'<p class="mut">Chưa có vi phạm nào.</p>'}</div>`;
   const f=$("#d-setup");if(f)f.onchange=()=>{fSetup=f.value;render()}}
@@ -112,7 +112,7 @@ function render(){
   return`<div class="card trade ${t.ai?.verdict||""}"><b>${esc(t.pair)} · ${esc(t.side)}</b> ${tIds(t).map(id=>S.setups.find(x=>x.id===id)).filter(Boolean).map(s=>`<span class="chip on" style="padding:1px 9px;font-size:12px;cursor:default">${esc(s.name)}</span>`).join("")} <span class="mut">${new Date(t.created_at).toLocaleString("vi-VN")}</span>
   <div class="mut">Entry ${esc(t.entry)} · SL ${esc(t.sl)} · TP ${esc(t.tp)} · RR ${rr==null?"–":rr.toFixed(2)}</div><p>${esc(t.note)}</p>
   <div class="imgs">${[t.h4_path,t.m15_path].filter(Boolean).map(p=>`<img data-p="${esc(p)}" alt="chart">`).join("")}</div>${alertHTML(t.ai)}
-  <label>Kết quả</label><select data-id="${t.id}" class="res" style="max-width:160px">${[["open","Đang mở"],["win","Thắng"],["loss","Thua"]].map(([v,l])=>`<option value="${v}" ${t.result===v?"selected":""}>${l}</option>`).join("")}</select> <button class="sec del" data-id="${t.id}" style="margin-left:8px">🗑 Xoá lệnh</button></div>`}).join(""):'<div class="card mut">Chưa có lệnh nào.</div>';
+  <label>Kết quả</label><select data-id="${t.id}" class="res" style="max-width:160px">${[["open","Đang mở"],["win","Thắng"],["loss","Thua"],["be","Hoà vốn (BE)"]].map(([v,l])=>`<option value="${v}" ${t.result===v?"selected":""}>${l}</option>`).join("")}</select> <button class="sec del" data-id="${t.id}" style="margin-left:8px">🗑 Xoá lệnh</button></div>`}).join(""):'<div class="card mut">Chưa có lệnh nào.</div>';
   document.querySelectorAll(".res").forEach(s=>s.onchange=async()=>{S.trades.find(t=>t.id==s.dataset.id).result=s.value;await sb.from("trades").update({result:s.value}).eq("id",s.dataset.id)});
   document.querySelectorAll(".del").forEach(b=>b.onclick=async()=>{const t=S.trades.find(x=>x.id==b.dataset.id);if(!t||!confirm("Xoá lệnh "+t.pair+"? Không thể hoàn tác."))return;
    const r=await sb.from("trades").delete().eq("id",t.id);if(r.error)return alert("Lỗi: "+r.error.message);
@@ -153,18 +153,19 @@ function renderRules(){
   $("#rmsg").textContent="AI đang phân tích…";try{const im=await Promise.all(f.map(compress));const r=await api({mode:"rules",images:im.map(({media_type,data})=>({media_type,data}))});
   $("#rtxt").value=r.text;$("#rmsg").textContent="Xem lại rồi bấm Lưu."+(r.provider&&r.provider!=="gemini"?" (model dự phòng: "+r.provider+")":"")}catch(e){$("#rmsg").textContent="Lỗi: "+e.message}}}
 let anaRange="all",anaBusy=false,anaRep=null;
+const rv=t=>t.result==="win"?rrOf(t):t.result==="loss"?-1:0;
 const rrOf=t=>t.sl&&t.entry&&t.tp?Math.abs(t.tp-t.entry)/Math.abs(t.entry-t.sl):null;
 const f1=x=>x==null?"–":x.toFixed(2);
 function anaData(){const lim=anaRange==="all"?Infinity:+anaRange*864e5,now=Date.now();
- const all=S.trades.filter(t=>now-new Date(t.created_at)<=lim);return{all,cl:all.filter(t=>t.result==="win"||t.result==="loss")}}
+ const all=S.trades.filter(t=>now-new Date(t.created_at)<=lim);return{all,cl:all.filter(t=>["win","loss","be"].includes(t.result))}}
 function grp(cl,fn){const m={};cl.forEach(t=>[].concat(fn(t)).forEach(k=>{if(k!=null)(m[k]=m[k]||[]).push(t)}));
  return Object.entries(m).map(([k,a])=>{const w=a.filter(t=>t.result==="win").length,rs=a.filter(t=>rrOf(t)!=null);
   return{k,n:a.length,wr:Math.round(w/a.length*100),rr:rs.length?rs.reduce((s,t)=>s+rrOf(t),0)/rs.length:null,
-   exp:rs.length?rs.reduce((s,t)=>s+(t.result==="win"?rrOf(t):-1),0)/rs.length:null}}).sort((a,b)=>b.n-a.n)}
+   exp:rs.length?rs.reduce((s,t)=>s+rv(t),0)/rs.length:null}}).sort((a,b)=>b.n-a.n)}
 function anaStats(cl){const n=cl.length,w=cl.filter(t=>t.result==="win").length,rs=cl.filter(t=>rrOf(t)!=null);
- const rr=rs.length?rs.reduce((s,t)=>s+rrOf(t),0)/rs.length:null,exp=rs.length?rs.reduce((s,t)=>s+(t.result==="win"?rrOf(t):-1),0)/rs.length:null;
+ const rr=rs.length?rs.reduce((s,t)=>s+rrOf(t),0)/rs.length:null,exp=rs.length?rs.reduce((s,t)=>s+rv(t),0)/rs.length:null;
  let cur=0,max=0;[...cl].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).forEach(t=>{if(t.result==="loss"){cur++;max=Math.max(max,cur)}else cur=0});
- return{n,wr:n?w/n*100:null,rr,be:rr?100/(1+rr):null,exp,maxLoss:max}}
+ return{n,be:cl.filter(t=>t.result==="be").length,wr:n?w/n*100:null,rr,be:rr?100/(1+rr):null,exp,maxLoss:max}}
 function breakdowns(cl){const V={green:"Tuân thủ (xanh)",yellow:"Lưu ý (vàng)",red:"Vi phạm (đỏ)"};
  return{"Theo cặp tiền":grp(cl,t=>t.pair),"Theo hướng":grp(cl,t=>t.side),
  "Theo setup":grp(cl,t=>{const a=tIds(t).map(id=>S.setups.find(x=>x.id===id)?.name).filter(Boolean);return a.length?a:"(không setup)"}),
@@ -180,12 +181,12 @@ function renderAna(){const{all,cl}=anaData(),s=anaStats(cl),B=breakdowns(cl),tip
  if(s.maxLoss>=4)tips.push(`Chuỗi thua dài nhất: <b>${s.maxLoss} lệnh</b> liên tiếp – cân nhắc quy tắc dừng giao dịch trong ngày sau 2–3 lệnh thua.`);
  const tbl=(t,rows)=>`<div class="card overflow"><h2>${t}</h2><table style="width:100%;border-collapse:collapse;text-align:left;min-width:420px"><tr class="mut"><th>Nhóm</th><th>Lệnh</th><th>Win-rate</th><th>RR TB</th><th>Kỳ vọng (R)</th></tr>${rows.map(x=>`<tr style="border-top:1px solid var(--line);${x.n<5?"opacity:.6":""}"><td>${esc(x.k)}${x.n<5?' <span class="mut">(mẫu nhỏ)</span>':""}</td><td>${x.n}</td><td class="${x.wr>=50?"up":"dn"}">${x.wr}%</td><td>${f1(x.rr)}</td><td class="${x.exp>0?"up":x.exp<0?"dn":""}">${x.exp==null?"–":(x.exp>0?"+":"")+f1(x.exp)}</td></tr>`).join("")}</table></div>`;
  $("#p-ana").innerHTML=`<select id="a-range" style="max-width:220px;margin-bottom:12px">${[["all","Toàn bộ thời gian"],["30","30 ngày gần nhất"],["90","90 ngày gần nhất"]].map(([v,l])=>`<option value="${v}" ${anaRange===v?"selected":""}>${l}</option>`).join("")}</select>
- <div class="grid" style="margin-bottom:14px"><div class="card kpi"><small>Lệnh đã đóng</small><b>${s.n}</b></div>
+ <div class="grid" style="margin-bottom:14px"><div class="card kpi"><small>Lệnh đã đóng</small><b>${s.n}</b></div><div class="card kpi"><small>Hoà vốn (BE)</small><b>${s.be}</b></div>
  <div class="card kpi"><small>Win-rate</small><b class="${s.wr>=(s.be||50)?"up":"dn"}">${s.wr==null?"–":s.wr.toFixed(0)+"%"}</b></div>
  <div class="card kpi"><small>RR dự kiến TB</small><b>${f1(s.rr)}</b></div>
  <div class="card kpi"><small>Win-rate hoà vốn</small><b>${s.be==null?"–":s.be.toFixed(0)+"%"}</b></div>
  <div class="card kpi"><small>Kỳ vọng (R/lệnh)</small><b class="${s.exp>0?"up":s.exp<0?"dn":""}">${s.exp==null?"–":(s.exp>0?"+":"")+f1(s.exp)}</b></div></div>
- <p class="mut" style="font-size:12px">Quy ước: lệnh thắng = +RR dự kiến (từ Entry/SL/TP), lệnh thua = −1R. App chưa ghi R thực tế nên đây là ước tính. ${s.n<30?"<b class='wn'>Mới có "+s.n+" lệnh đã đóng – cần khoảng 30+ lệnh để kết luận đáng tin.</b>":""}</p>
+ <p class="mut" style="font-size:12px">Quy ước: lệnh thắng = +RR dự kiến (từ Entry/SL/TP), lệnh thua = −1R, hoà vốn (BE) = 0R và không tính là thắng. App chưa ghi R thực tế nên đây là ước tính. ${s.n<30?"<b class='wn'>Mới có "+s.n+" lệnh đã đóng – cần khoảng 30+ lệnh để kết luận đáng tin.</b>":""}</p>
  ${tips.length?`<div class="card"><h2>Nhận xét nhanh</h2><ul style="margin:0;padding-left:18px">${tips.map(t=>`<li style="margin:6px 0">${t}</li>`).join("")}</ul></div>`:""}
  <div class="card"><h2>🤖 Coach AI phân tích & đề xuất cải thiện</h2><p class="mut">AI đọc thống kê và các lệnh gần nhất (ghi chú, lỗi kỷ luật) để đề xuất cách tăng win-rate và RR.</p>
  <button class="pri" id="a-btn" ${s.n<5?"disabled":""}>Phân tích lịch sử giao dịch</button>${s.n<5?' <span class="mut">Cần ít nhất 5 lệnh đã đóng (Thắng/Thua).</span>':""}<div id="a-out">${anaRep?repHTML(anaRep):""}</div></div>
@@ -198,7 +199,7 @@ function repHTML(x){const{report:r,provider:p}=x,L=(t,a,c)=>a?.length?`<h3 style
 async function runAna(all,s,B){if(anaBusy)return;anaBusy=true;$("#a-btn").disabled=true;$("#a-out").innerHTML='<p class="mut">🤖 AI đang phân tích lịch sử…</p>';
  try{const rd=x=>x==null?null:+x.toFixed(2);
   const trades=[...all].slice(-40).map(t=>({pair:t.pair,side:t.side,rr:rd(rrOf(t)),result:t.result,verdict:t.ai?.verdict,score:t.ai?.score,fomo:!!t.ai?.fomo,violations:(t.ai?.violations||[]).slice(0,2),note:(t.note||"").slice(0,120),date:String(t.created_at).slice(0,10)}));
-  const stats={closed:s.n,winrate_pct:rd(s.wr),avg_planned_rr:rd(s.rr),breakeven_winrate_pct:rd(s.be),expectancy_R:rd(s.exp),max_losing_streak:s.maxLoss,
+  const stats={closed:s.n,winrate_pct:rd(s.wr),avg_planned_rr:rd(s.rr),breakeven_winrate_pct:rd(s.be),expectancy_R:rd(s.exp),max_losing_streak:s.maxLoss,be_count:s.be,
    breakdown:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.map(x=>({nhom:x.k,lenh:x.n,winrate_pct:x.wr,rr_tb:rd(x.rr),ky_vong_R:rd(x.exp)}))]))};
   anaRep=await api({mode:"insights",stats,trades});$("#a-out").innerHTML=repHTML(anaRep)}
  catch(e){$("#a-out").innerHTML=`<div class="alert red">Lỗi: ${esc(e.message)}</div>`}
@@ -315,16 +316,26 @@ function btPlanHTML(){const p=btPlan;return`<div class="card"><h2>AI hiểu phư
  ${p.unsupported_notes?.length?`<div class="alert yellow" style="font-weight:400"><b>Phần không thể backtest tự động (đã bỏ qua / làm gần đúng):</b><ul>${p.unsupported_notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul></div>`:""}
  <details><summary class="mut" style="cursor:pointer">Quy tắc dạng JSON (có thể sửa rồi chạy lại)</summary><textarea id="bt-json" style="min-height:200px;font-family:monospace;font-size:12px">${esc(JSON.stringify(p.spec,null,1))}</textarea>
  <button class="sec" id="bt-rerun" style="margin-top:8px">Chạy lại với JSON đã sửa</button></details>
- <button class="sec" id="bt-save" style="margin-top:12px">💾 Lưu thành setup chuẩn</button> <span id="bt-smsg" class="mut"></span></div>`}
+ <button class="pri" id="bt-dl" style="margin:12px 8px 0 0">⬇️ Tải EA cho MT5 (.mq5)</button><button class="sec" id="bt-save" style="margin-top:12px">💾 Lưu thành setup chuẩn</button> <span id="bt-smsg" class="mut"></span>
+ <details style="margin-top:12px"><summary class="mut" style="cursor:pointer">Cách chạy EA trong MT5</summary><ol style="padding-left:18px">
+ <li>Trong MT5: <b>File → Open Data Folder</b>, mở <b>MQL5 → Experts</b>, chép file .mq5 vào đó.</li>
+ <li>Mở MetaEditor (<b>F4</b>), mở file, bấm <b>Compile (F7)</b> – phải báo 0 errors.</li>
+ <li>Mở <b>Strategy Tester (Ctrl+R)</b>: chọn Expert là EA này, Symbol và Timeframe đúng với dữ liệu muốn test, chọn khoảng ngày, Modeling = "1 minute OHLC" (nhanh) hoặc "Every tick based on real ticks" (sát thực tế), bấm Start.</li>
+ <li>Chỉnh <b>RiskPercent</b> (% rủi ro mỗi lệnh) ở thẻ Inputs, xem kết quả ở thẻ Backtest/Graph/Report.</li></ol>
+ <p class="mut" style="font-size:12px">EA do hệ thống sinh tự động theo đúng quy tắc ở trên. Kết quả trong MT5 có thể lệch so với trong app (cách tính ATR/EMA, dữ liệu tick, spread, khớp lệnh khác nhau). Hãy thử trên tài khoản demo trước khi tin dùng.</p></details></div>`}
 function renderBT(){
  if(!$("#p-bt").dataset.r){$("#p-bt").dataset.r=1;
-  $("#p-bt").innerHTML=`<div class="card"><h2>Backtest phương pháp mới</h2><p class="mut">Mô tả phương pháp bằng chữ, upload dữ liệu giá (CSV) – AI chuyển thành quy tắc, hệ thống chạy backtest bằng thuật toán (AI không tự "đoán" kết quả).</p>
+  $("#p-bt").innerHTML=`<div class="card"><h2>Backtest phương pháp mới</h2><div style="margin-bottom:8px"><button class="chip bt-m on" data-m="csv">📊 Dữ liệu giá CSV (chính xác)</button><button class="chip bt-m" data-m="img">🖼 Ảnh chart D1/H4/M15 (tham khảo)</button></div><p class="mut">Mô tả phương pháp bằng chữ, upload dữ liệu giá (CSV) – AI chuyển thành quy tắc, hệ thống chạy backtest bằng thuật toán (AI không tự "đoán" kết quả).</p>
   <label>Lấy mô tả từ setup có sẵn (tuỳ chọn)</label><select id="bt-pre"></select>
   <label>Mô tả phương pháp giao dịch</label><textarea id="bt-desc" style="min-height:130px" placeholder="VD: Mua khi EMA20 cắt lên EMA50 và RSI14 > 50, SL = 1.5 ATR, TP = 2R. Bán ngược lại."></textarea>
-  <label>Dữ liệu giá CSV (cột time, open, high, low, close – xuất từ MT4/MT5/TradingView)</label><input type="file" id="bt-file" accept=".csv,.txt">
+  <div id="bt-csv"><label>Dữ liệu giá CSV (cột time, open, high, low, close – xuất từ MT4/MT5/TradingView)</label><input type="file" id="bt-file" accept=".csv,.txt">
   <div class="row"><div><label>Khung thời gian của dữ liệu</label><select id="bt-tf"><option>M5</option><option selected>M15</option><option>M30</option><option>H1</option><option>H4</option><option>D1</option></select></div>
   <div><label>Pip size (để trống = tự nhận)</label><input id="bt-pip" type="number" step="any" placeholder="0.0001 / 0.01"></div><div><label>Spread + phí (pip/lệnh)</label><input id="bt-spread" type="number" step="any" value="1"></div></div>
-  <button class="pri" id="bt-run">Chuyển thành quy tắc & chạy backtest</button> <span id="bt-msg" class="mut"></span></div><div id="bt-plan"></div><div id="bt-res"></div>`;
+  <button class="pri" id="bt-run">Chuyển thành quy tắc & chạy backtest</button> <span id="bt-msg" class="mut"></span></div>
+  <div id="bt-img" class="hide"><p class="mut">Một ảnh chụp chỉ là một khoảnh khắc nên không thể chạy backtest theo kiểu lịch sử giá. Thay vào đó: upload ảnh chart <b>tại thời điểm vào lệnh</b> (D1, H4, M15 – có thể thiếu khung) của các tình huống trong quá khứ, chọn kết quả thực tế. AI kiểm tra từng tình huống có khớp phương pháp không, rồi thống kê win-rate theo nhóm.</p>
+  <div id="bi-cases"></div><button class="sec" id="bi-add">+ Thêm tình huống</button> <button class="pri" id="bi-run">Phân tích các tình huống</button> <span id="bi-msg" class="mut"></span></div></div>
+  <div id="bt-plan"></div><div id="bt-res"></div><div id="bi-res" class="hide"></div>`;
+  document.querySelectorAll(".bt-m").forEach(b=>b.onclick=()=>biMode(b.dataset.m));$("#bi-add").onclick=biAdd;$("#bi-run").onclick=biRun;
   $("#bt-pre").onchange=e=>{const s=S.setups.find(x=>String(x.id)===e.target.value);if(s)$("#bt-desc").value=s.body};
   $("#bt-run").onclick=btStart}
  const v=$("#bt-pre").value;$("#bt-pre").innerHTML='<option value="">— Không chọn —</option>'+S.setups.map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join("");$("#bt-pre").value=v}
@@ -336,11 +347,149 @@ async function btStart(){if(btBusy)return;const msg=t=>$("#bt-msg").textContent=
   msg("AI đang chuyển phương pháp thành quy tắc…"+note);
   const r=await api({mode:"strategy",description:desc,tf:btOpt.tf});btPlan=r.plan;btPlan.provider=r.provider;
   if(!btPlan.supported){$("#bt-plan").innerHTML=`<div class="alert yellow"><b>Phương pháp này chưa thể backtest tự động.</b><br>${esc(btPlan.reason||"")}${btPlan.unsupported_notes?.length?`<ul>${btPlan.unsupported_notes.map(x=>`<li>${esc(x)}</li>`).join("")}</ul>`:""}<div style="font-weight:400;margin-top:6px">Gợi ý: mô tả lại bằng điều kiện đo được (chỉ báo, mức giá, cắt nhau, phá đỉnh/đáy N nến…).</div></div>`;msg("");btBusy=false;$("#bt-run").disabled=false;return}
-  $("#bt-plan").innerHTML=btPlanHTML();
+  $("#bt-plan").innerHTML=btPlanHTML();$("#bt-dl").onclick=btDownload;
   $("#bt-rerun").onclick=()=>{try{btPlan.spec=JSON.parse($("#bt-json").value)}catch(e){return $("#bt-res").innerHTML='<div class="alert red">JSON không hợp lệ: '+esc(e.message)+"</div>"}btExec(btPlan.spec)};
   $("#bt-save").onclick=async()=>{const r=await sb.from("setups").insert({name:btPlan.name||"Setup từ backtest",body:btPlan.rules_text||desc}).select().single();if(r.error)return $("#bt-smsg").textContent=r.error.message;S.setups.push(r.data);$("#bt-smsg").textContent="Đã lưu vào tab Setup chuẩn ✓"};
   msg("Đang chạy backtest…");await new Promise(x=>setTimeout(x,30));btExec(btPlan.spec);msg("")}
  catch(e){msg("Lỗi: "+e.message)}
  btBusy=false;$("#bt-run").disabled=false}
+let btMode="csv",biN=0,biRes=null,biRev=null;
+function biAdd(){const id=++biN;const d=document.createElement("div");d.className="card";d.dataset.c=id;d.style.margin="10px 0";
+ d.innerHTML=`<b>Tình huống #${id}</b> <button class="sec bi-del" style="float:right">Xoá</button>
+ <div class="row"><div><label>Ảnh D1</label><input type="file" class="ci-d1" accept="image/*"></div><div><label>Ảnh H4</label><input type="file" class="ci-h4" accept="image/*"></div><div><label>Ảnh M15</label><input type="file" class="ci-m15" accept="image/*"></div></div>
+ <div class="row"><div><label>Kết quả thực tế</label><select class="ci-res"><option value="">Chưa chọn</option><option value="win">Thắng</option><option value="loss">Thua</option><option value="be">Hoà vốn</option></select></div>
+ <div><label>R đạt được (tuỳ chọn; thua = -1)</label><input class="ci-r" type="number" step="any"></div></div><label>Ghi chú (tuỳ chọn)</label><input class="ci-note">`;
+ d.querySelector(".bi-del").onclick=()=>d.remove();$("#bi-cases").appendChild(d)}
+function biMode(m){btMode=m;$("#bt-csv").classList.toggle("hide",m!=="csv");$("#bt-img").classList.toggle("hide",m!=="img");
+ $("#bt-plan").classList.toggle("hide",m!=="csv");$("#bt-res").classList.toggle("hide",m!=="csv");$("#bi-res").classList.toggle("hide",m!=="img");
+ document.querySelectorAll(".bt-m").forEach(b=>b.classList.toggle("on",b.dataset.m===m));if(m==="img"&&!$("#bi-cases").children.length)biAdd()}
+async function biRun(){if(btBusy)return;const msg=t=>$("#bi-msg").textContent=t,desc=$("#bt-desc").value.trim();if(!desc)return msg("Hãy mô tả phương pháp ở ô phía trên.");
+ const cs=[...document.querySelectorAll("#bi-cases [data-c]")].map(el=>({n:el.dataset.c,f:[["D1",el.querySelector(".ci-d1").files[0]],["H4",el.querySelector(".ci-h4").files[0]],["M15",el.querySelector(".ci-m15").files[0]]].filter(x=>x[1]),
+  res:el.querySelector(".ci-res").value,r:el.querySelector(".ci-r").value===""?null:+el.querySelector(".ci-r").value,note:el.querySelector(".ci-note").value})).filter(c=>c.f.length);
+ if(!cs.length)return msg("Mỗi tình huống cần ít nhất một ảnh.");if(cs.length>12)return msg("Tối đa 12 tình huống mỗi lần chạy – hãy xoá bớt hoặc chạy làm nhiều đợt.");
+ btBusy=true;$("#bi-run").disabled=true;biRev=null;const out=[];
+ for(let k=0;k<cs.length;k++){const c=cs[k];msg(`Đang phân tích tình huống ${k+1}/${cs.length}… (có thể mất vài chục giây mỗi cái)`);
+  try{const im=await Promise.all(c.f.map(x=>compress(x[1],1280)));
+   const r=await api({mode:"case_check",description:desc,note:c.note,labels:c.f.map(x=>x[0]),images:im.map(({media_type,data})=>({media_type,data}))});out.push({...c,...r.check,provider:r.provider})}
+  catch(e){out.push({...c,err:e.message})}}
+ biRes=out;btBusy=false;$("#bi-run").disabled=false;msg("");biShow()}
+function biShow(){const R=biRes,G=[["yes","✅ Khớp phương pháp"],["partial","⚠️ Khớp một phần / thiếu thông tin"],["no","🚨 Không khớp"]];
+ const st=a=>{const d=a.filter(x=>x.res),w=d.filter(x=>x.res==="win").length,rs=a.filter(x=>x.r!=null);return{n:a.length,nr:d.length,wr:d.length?w/d.length*100:null,avg:rs.length?rs.reduce((s,x)=>s+x.r,0)/rs.length:null,tot:rs.reduce((s,x)=>s+x.r,0),nrR:rs.length}};
+ const rows=G.map(([k,t])=>{const s=st(R.filter(x=>x.match===k));return`<tr style="border-top:1px solid var(--line)"><td>${t}</td><td>${s.n}</td><td>${s.nr}</td><td>${s.wr==null?"–":s.wr.toFixed(0)+"%"}</td><td>${s.avg==null?"–":(s.avg>0?"+":"")+s.avg.toFixed(2)+" ("+s.nrR+" lệnh)"}</td></tr>`}).join("");
+ const y=st(R.filter(x=>x.match==="yes")),n=st(R.filter(x=>x.match==="no")),errs=R.filter(x=>x.err).length,tips=[];
+ if(y.nr>=3&&n.nr>=3)tips.push(`Tình huống khớp phương pháp có win-rate <b>${y.wr.toFixed(0)}%</b> so với <b>${n.wr.toFixed(0)}%</b> ở tình huống không khớp${y.wr>n.wr?" – tuân thủ phương pháp có vẻ cho kết quả tốt hơn.":" – phương pháp chưa cho thấy lợi thế."}`);
+ if(R.length<30)tips.push(`Chỉ có <b>${R.length}</b> tình huống – quá ít để kết luận (nên 30+ và chọn ngẫu nhiên, không chọn lọc).`);
+ $("#bi-res").innerHTML=`<div class="card"><h2>Kết quả phân tích bằng ảnh</h2><div class="alert yellow" style="font-weight:400">⚠️ Chỉ mang tính tham khảo: AI đọc ảnh có thể nhầm giá trị chỉ báo/mức giá, và nếu bạn chỉ chọn những ảnh đẹp thì kết quả sẽ lệch (thiên lệch chọn mẫu). Muốn kết quả đáng tin, hãy dùng backtest bằng CSV.</div>
+ <div class="overflow"><table style="width:100%;border-collapse:collapse;text-align:left;min-width:480px"><tr class="mut"><th>Nhóm</th><th>Tình huống</th><th>Có kết quả</th><th>Win-rate</th><th>R trung bình</th></tr>${rows}</table></div>
+ ${tips.length?`<ul style="padding-left:18px">${tips.map(t=>`<li style="margin:6px 0">${t}</li>`).join("")}</ul>`:""}${errs?`<p class="wn">${errs} tình huống bị lỗi, xem bên dưới.</p>`:""}</div>
+ <div class="card"><h2>Chi tiết từng tình huống</h2>${R.map(x=>`<div style="border-top:1px solid var(--line);padding:8px 0"><b>#${x.n}</b> ${x.err?`<span class="dn">Lỗi: ${esc(x.err)}</span>`:`${{yes:"✅",partial:"⚠️",no:"🚨"}[x.match]||"•"} ${esc(x.match==="yes"?"Khớp":x.match==="no"?"Không khớp":"Một phần")} · ${esc(x.score)}/100 · ${esc(x.direction||"?")}`} ${x.res?`· <span class="${x.res==="win"?"up":x.res==="loss"?"dn":""}">${{win:"Thắng",loss:"Thua",be:"Hoà"}[x.res]}${x.r!=null?" ("+x.r+"R)":""}</span>`:""}
+ ${x.reasons?.length?`<ul style="margin:4px 0;padding-left:18px">${x.reasons.map(i=>`<li>${esc(i)}</li>`).join("")}</ul>`:""}${x.missing?.length?`<div class="mut" style="font-size:12px">Không xác định được từ ảnh: ${x.missing.map(esc).join("; ")}</div>`:""}</div>`).join("")}</div>
+ <div class="card"><h2>🤖 Coach AI nhận xét</h2><button class="pri" id="bi-rev">Nhận xét kết quả này</button><div id="bi-revout">${biRev?btRevHTML(biRev):""}</div></div>`;
+ $("#bi-rev").onclick=async()=>{if(btBusy)return;btBusy=true;$("#bi-rev").disabled=true;$("#bi-revout").innerHTML='<p class="mut">🤖 AI đang nhận xét…</p>';
+  try{const f=s=>({tinh_huong:s.n,co_ket_qua:s.nr,winrate_pct:s.wr==null?null:+s.wr.toFixed(0),R_tb:s.avg==null?null:+s.avg.toFixed(2)});
+   biRev=await api({mode:"bt_review",payload:{kind:"image",rules_text:$("#bt-desc").value,tong_tinh_huong:R.length,khop:f(y),khong_khop:f(n),mot_phan:f(st(R.filter(x=>x.match==="partial"))),loi:errs,
+    chi_tiet:R.filter(x=>!x.err).map(x=>({khop:x.match,diem:x.score,ket_qua:x.res||null,R:x.r,thieu:(x.missing||[]).slice(0,3)}))}});$("#bi-revout").innerHTML=btRevHTML(biRev)}
+  catch(e){$("#bi-revout").innerHTML=`<div class="alert red">Lỗi: ${esc(e.message)}</div>`}btBusy=false;$("#bi-rev").disabled=false}}
+// BT-MQL-START
+function btMQL(plan){const s=plan.spec,dia=t=>String(t||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/Đ/g,"D");
+ const name=dia(plan.name||"Strategy").replace(/[^A-Za-z0-9 _-]/g,"").trim()||"Strategy";
+ const num=x=>Number.isInteger(x)?x.toFixed(1):String(x),inds=[...s.indicators];if(!inds.some(d=>d.id==="atr"))inds.push({id:"atr",type:"atr",period:14});
+ const P={open:"iOpen",high:"iHigh",low:"iLow",close:"iClose"};
+ const op=(x,base)=>{if(typeof x==="number")return num(x);const m=/^([A-Za-z_]\w*)(?:\[(\d+)\])?$/.exec(x),sh=base+(+m[2]||0);return P[m[1]]?`${P[m[1]]}(_Symbol,_Period,${sh})`:`B_${m[1]}(${sh})`};
+ const cond=c=>{const L=b=>op(c.left,b),R=b=>op(c.right,b);
+  if(c.op==="crosses_above")return`(${L(2)}<=${R(2)} && ${L(1)}>${R(1)})`;if(c.op==="crosses_below")return`(${L(2)}>=${R(2)} && ${L(1)}<${R(1)})`;
+  return`(${L(1)}${c.op}${R(1)})`};
+ const sig=(on,arr)=>on&&arr.length?arr.map(cond).join(" && ")  :"false";
+ let handles="",create="",funcs="",rel="",warm=50;
+ inds.forEach(d=>{const id=d.id,p=d.period||14;warm=Math.max(warm,(p+(d.slow||0)+(d.signal||0))*3+50);let h=null,buf=0;
+  switch(d.type){case"sma":h=`iMA(_Symbol,_Period,${p},0,MODE_SMA,PRICE_CLOSE)`;break;case"ema":h=`iMA(_Symbol,_Period,${p},0,MODE_EMA,PRICE_CLOSE)`;break;
+   case"rsi":h=`iRSI(_Symbol,_Period,${p},PRICE_CLOSE)`;break;case"atr":h=`iATR(_Symbol,_Period,${p})`;break;
+   case"macd":case"macd_signal":h=`iMACD(_Symbol,_Period,${d.fast||12},${d.slow||26},${d.signal||9},PRICE_CLOSE)`;buf=d.type==="macd"?0:1;break;
+   case"bb_upper":case"bb_lower":h=`iBands(_Symbol,_Period,${p},0,${num(d.mult||2)},PRICE_CLOSE)`;buf=d.type==="bb_upper"?1:2;break}
+  if(h){handles+=`int h_${id}=INVALID_HANDLE;\n`;create+=`   h_${id}=${h};\n   if(h_${id}==INVALID_HANDLE){Print("Khong tao duoc chi bao ${id}");return INIT_FAILED;}\n`;rel+=`   IndicatorRelease(h_${id});\n`;
+   funcs+=`double B_${id}(int sh){double b[1];if(CopyBuffer(h_${id},${buf},sh,1,b)<1){bad=true;return 0.0;}return b[0];}\n`}
+  else{const hi=d.type==="highest";funcs+=`double B_${id}(int sh){int k=${hi?"iHighest":"iLowest"}(_Symbol,_Period,${hi?"MODE_HIGH":"MODE_LOW"},${p},sh+1);if(k<0){bad=true;return 0.0;}return ${hi?"iHigh":"iLow"}(_Symbol,_Period,k);}\n`}});
+ const sd=s.stop.type==="atr"?`${num(s.stop.value)}*atr`:`${num(s.stop.value)}*pip`,
+  td=s.take_profit.type==="rr"?`sd*${num(s.take_profit.value)}`:s.take_profit.type==="atr"?`${num(s.take_profit.value)}*atr`:`${num(s.take_profit.value)}*pip`;
+ const rules=String(plan.rules_text||"").split("\n").map(l=>"// "+l).join("\n");
+ return`\uFEFF//+------------------------------------------------------------------+
+//| TradeCoach AI - EA sinh tu dong tu mo ta phuong phap             |
+//| Phuong phap: ${name}
+//+------------------------------------------------------------------+
+#property copyright "TradeCoach AI"
+#property version   "1.00"
+#include <Trade\\Trade.mqh>
+
+// ---- Quy tac goc (tu mo ta cua ban) ----
+${rules}
+// ----------------------------------------
+// Cach chay: bien dich (F7) trong MetaEditor, sau do mo Strategy Tester (Ctrl+R),
+// chon EA nay, dung Symbol/Timeframe voi du lieu muon test, bam Start.
+// Tin hieu duoc xet khi nen vua DONG, vao lenh o gia thi truong ngay khi nen moi mo.
+
+input double RiskPercent = 1.0;       // % von rui ro moi lenh (bo qua neu FixedLot > 0)
+input double FixedLot    = 0.0;       // Lot co dinh (0 = tinh theo RiskPercent)
+input double PipSize     = 0.0;       // Kich thuoc 1 pip (0 = tu nhan; vang/chi so nen tu nhap)
+input int    MaxBarsInTrade = ${s.max_bars}; // So nen toi da giu lenh (0 = khong gioi han)
+input long   MagicNumber = 20260101;
+input int    MaxSlippagePoints = 20;
+
+CTrade trade;
+bool bad=false;
+${handles}
+double PipVal(){if(PipSize>0)return PipSize;return (_Digits==3||_Digits==5)?_Point*10.0:_Point;}
+${funcs}
+bool LongSignal(){return ${sig(s.direction!=="short",s.entry_long)};}
+bool ShortSignal(){return ${sig(s.direction!=="long",s.entry_short)};}
+
+bool HasPosition(){
+   for(int i=PositionsTotal()-1;i>=0;i--){ulong tk=PositionGetTicket(i);if(tk==0)continue;
+      if(PositionGetString(POSITION_SYMBOL)==_Symbol&&PositionGetInteger(POSITION_MAGIC)==MagicNumber)return true;}
+   return false;
+}
+void CheckTimeExit(){
+   if(MaxBarsInTrade<=0)return;
+   for(int i=PositionsTotal()-1;i>=0;i--){ulong tk=PositionGetTicket(i);if(tk==0)continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol||PositionGetInteger(POSITION_MAGIC)!=MagicNumber)continue;
+      if(iBarShift(_Symbol,_Period,(datetime)PositionGetInteger(POSITION_TIME))>=MaxBarsInTrade)trade.PositionClose(tk);}
+}
+double CalcLots(double entry,double sl,bool isBuy){
+   double lots=FixedLot;
+   if(lots<=0){double risk=AccountInfoDouble(ACCOUNT_BALANCE)*RiskPercent/100.0,loss=0;
+      if(!OrderCalcProfit(isBuy?ORDER_TYPE_BUY:ORDER_TYPE_SELL,_Symbol,1.0,entry,sl,loss)||loss>=0)return 0;
+      lots=risk/(-loss);}
+   double step=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_STEP),mn=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MIN),mx=SymbolInfoDouble(_Symbol,SYMBOL_VOLUME_MAX);
+   lots=MathFloor(lots/step)*step;lots=MathMax(mn,MathMin(mx,lots));
+   return NormalizeDouble(lots,(int)MathMax(0,MathRound(-MathLog10(step))));
+}
+int OnInit(){
+${create}   trade.SetExpertMagicNumber(MagicNumber);trade.SetDeviationInPoints(MaxSlippagePoints);
+   return INIT_SUCCEEDED;
+}
+void OnDeinit(const int reason){
+${rel}}
+void OnTick(){
+   static datetime last=0;datetime t=iTime(_Symbol,_Period,0);if(t==last)return;last=t;
+   if(Bars(_Symbol,_Period)<${warm})return;
+   CheckTimeExit();
+   if(HasPosition())return;
+   bad=false;
+   bool goLong=LongSignal();bool goShort=goLong?false:ShortSignal();
+   if(bad||(!goLong&&!goShort))return;
+   double atr=B_atr(1);if(bad||atr<=0)return;
+   double pip=PipVal();double sd=${sd};double td=${td};
+   double minD=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*_Point;
+   if(sd<=0||td<=0||sd<minD||td<minD)return;
+   double entry=goLong?SymbolInfoDouble(_Symbol,SYMBOL_ASK):SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double sl=NormalizeDouble(goLong?entry-sd:entry+sd,_Digits),tp=NormalizeDouble(goLong?entry+td:entry-td,_Digits);
+   double lots=CalcLots(entry,sl,goLong);if(lots<=0)return;
+   if(goLong)trade.Buy(lots,_Symbol,0,sl,tp,"TradeCoach");else trade.Sell(lots,_Symbol,0,sl,tp,"TradeCoach");
+}
+`}
+function btDownload(){if(!btPlan?.spec)return;try{const code=btMQL({...btPlan,spec:btValidate(btPlan.spec)});
+ const slug=(btPlan.name||"Strategy").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/đ/g,"d").replace(/[^A-Za-z0-9]+/g,"_").replace(/^_|_$/g,"").slice(0,40)||"Strategy";
+ const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([code],{type:"text/plain;charset=utf-8"}));a.download="TradeCoach_"+slug+".mq5";document.body.appendChild(a);a.click();a.remove();$("#bt-smsg").textContent="Đã tải file .mq5 ✓"}
+ catch(e){$("#bt-smsg").textContent="Không tạo được EA: "+e.message}}
+// BT-MQL-END
 boot().catch(e=>{$("#who").textContent="Chưa cấu hình biến môi trường Supabase"});
 </script></body></html>
