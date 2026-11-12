@@ -31,7 +31,7 @@ button.pri:disabled{opacity:.5}button.sec{background:var(--line);color:var(--tx)
 table th,table td{padding:6px 8px}
 #auth{max-width:380px;margin:60px auto}
 </style></head><body>
-<header><h1>📈 Trade<b>Coach</b> AI</h1><span><span class="mut" id="who"></span> <button class="sec hide" id="out">Đăng xuất</button></span></header>
+<header><h1>📈 Trade<b>Coach</b> AI <small class="mut" style="font-size:11px;font-weight:400">v1.6</small></h1><span><span class="mut" id="who"></span> <button class="sec hide" id="out">Đăng xuất</button></span></header>
 <main id="auth" class="hide"><div class="card"><h2>Đăng nhập / Đăng ký</h2>
 <label>Email</label><input id="a-mail" type="email"><label>Mật khẩu (≥6 ký tự)</label><input id="a-pw" type="password">
 <button class="pri" id="a-in">Đăng nhập</button> <button class="sec" id="a-up">Đăng ký</button><p id="a-msg" class="mut"></p></div></main>
@@ -54,18 +54,22 @@ async function api(body){const ac=new AbortController(),tm=setTimeout(()=>ac.abo
  if(!r.ok)throw new Error(j.error||"Lỗi server "+r.status);return j}
  catch(e){throw new Error(e.name==="AbortError"?"Quá thời gian chờ (100s). Thử lại hoặc dùng ảnh nhỏ hơn.":e.message)}finally{clearTimeout(tm)}}
 function compress(file,maxD=1600){return new Promise((ok,no)=>{
- const t=setTimeout(()=>fail("Không đọc được ảnh (quá thời gian). Hãy thử PNG/JPG nhỏ hơn."),20000),url=URL.createObjectURL(file),im=new Image();
- const fail=m=>{clearTimeout(t);URL.revokeObjectURL(url);no(new Error(m))};
+ const why=[],OKT=["image/png","image/jpeg","image/webp","image/gif"];let fin=false;
+ const url=URL.createObjectURL(file),im=new Image(),t=setTimeout(()=>{why.push("quá thời gian");done(null)},20000);
+ const b64=bl=>new Promise((res,rej)=>{const f=new FileReader();f.onload=()=>res(f.result.split(",")[1]);f.onerror=()=>rej(new Error("FileReader"));f.readAsDataURL(bl)});
+ const done=async r=>{if(fin)return;fin=true;clearTimeout(t);URL.revokeObjectURL(url);if(r)return ok(r);
+  if(OKT.includes(file.type)&&file.size<=1048576){try{return ok({blob:file,media_type:file.type,data:await b64(file),raw:true})}catch(e){why.push("đọc file gốc: "+e.message)}}
+  no(new Error("Không nén được ảnh ["+why.join("; ")+"]. "+(file.size>1048576?"Ảnh gốc lớn hơn 1MB nên không gửi thẳng được, hãy thu nhỏ ảnh.":"Có thể trình duyệt hoặc tiện ích đang chặn canvas (Brave, Firefox chống theo dõi, Canvas Blocker…): hãy tắt chặn cho trang này.")))};
  im.onload=async()=>{try{
-  const W=im.naturalWidth||im.width,H=im.naturalHeight||im.height;if(!W||!H)return fail("Ảnh không có kích thước hợp lệ. Hãy dùng PNG/JPG.");
+  const W=im.naturalWidth||im.width,H=im.naturalHeight||im.height;if(!W||!H){why.push("ảnh có kích thước 0");return done(null)}
   for(const d of[...new Set([maxD,1280,1024,800,600].filter(x=>x<=maxD))]){
    const k=Math.min(1,d/Math.max(W,H)),c=document.createElement("canvas");c.width=Math.max(1,Math.round(W*k));c.height=Math.max(1,Math.round(H*k));
-   const g=c.getContext("2d");if(!g)continue;g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
-   let bl=await new Promise(r=>c.toBlob(r,"image/jpeg",.82));
-   if(!bl){try{const u=c.toDataURL("image/jpeg",.82);if(u.startsWith("data:image/jpeg")){const s=atob(u.split(",")[1]),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);bl=new Blob([a],{type:"image/jpeg"})}}catch(e){}}
-   if(bl&&bl.size>0){const data=await new Promise((res,rej)=>{const f=new FileReader();f.onload=()=>res(f.result.split(",")[1]);f.onerror=rej;f.readAsDataURL(bl)});clearTimeout(t);URL.revokeObjectURL(url);return ok({blob:bl,media_type:"image/jpeg",data})}}
-  fail("Không nén được ảnh (ảnh quá lớn hoặc trình duyệt thiếu bộ nhớ). Hãy chụp lại ở độ phân giải nhỏ hơn hoặc dùng trình duyệt khác.")}catch(e){fail(e.message||"Lỗi xử lý ảnh")}};
- im.onerror=()=>fail("Định dạng ảnh không được hỗ trợ. Hãy dùng PNG/JPG");im.src=url})}
+   const g=c.getContext("2d");if(!g){why.push("không có context 2D");continue}g.fillStyle="#fff";g.fillRect(0,0,c.width,c.height);g.drawImage(im,0,0,c.width,c.height);
+   let bl=null;try{bl=await new Promise(r=>c.toBlob(r,"image/jpeg",.82))}catch(e){why.push("toBlob: "+e.message)}
+   if(!bl){why.push(d+"px: toBlob=null");try{const u=c.toDataURL("image/jpeg",.82);if(u.startsWith("data:image/jpeg")){const s=atob(u.split(",")[1]),a=new Uint8Array(s.length);for(let i=0;i<s.length;i++)a[i]=s.charCodeAt(i);bl=new Blob([a],{type:"image/jpeg"})}else why.push("toDataURL không trả JPEG")}catch(e){why.push("toDataURL: "+e.message)}}
+   if(bl&&bl.size>0)return done({blob:bl,media_type:"image/jpeg",data:await b64(bl)})}
+  done(null)}catch(e){why.push(e.message||"lỗi")+done(null)}};
+ im.onerror=()=>{why.push("không giải mã được ảnh");done(null)};im.src=url})}
 async function boot(){
  const c=await (await fetch("/api/config")).json();sb=supabase.createClient(c.url,c.key);
  sb.auth.onAuthStateChange((_e,s)=>{setTimeout(()=>enter(s),0)});enter((await sb.auth.getSession()).data.session)}
@@ -131,8 +135,8 @@ async function addTrade(){if(busy)return;const g=id=>$(id).value;
  if(!t.entry||!t.sl)return $("#n-out").innerHTML='<div class="alert yellow">Nhập tối thiểu Entry và SL.</div>';
  busy=true;$("#n-save").disabled=true;$("#n-out").innerHTML='<p class="mut">🤖 AI đang đối chiếu với setup chuẩn…</p>';
  try{const fs=[["h4",$("#n-h4").files[0]],["m15",$("#n-m15").files[0]]].filter(x=>x[1]),im=[];
-  for(const[k,f]of fs){const c=await compress(f);im.push(c);const path=`${uid}/${Date.now()}-${k}.jpg`;
-   const up=await sb.storage.from("charts").upload(path,c.blob,{contentType:"image/jpeg"});if(!up.error)t[k+"_path"]=path}
+  for(const[k,f]of fs){const c=await compress(f);im.push(c);const path=`${uid}/${Date.now()}-${k}.${c.media_type.split("/")[1].replace("jpeg","jpg")}`;
+   const up=await sb.storage.from("charts").upload(path,c.blob,{contentType:c.media_type});if(!up.error)t[k+"_path"]=path}
   try{t.ai=(await api({mode:"trade",images:im.map(({media_type,data})=>({media_type,data})),setups:su.map(x=>({name:x.name,body:x.body})),trade:t})).ai}
   catch(e){t.ai={verdict:"yellow",score:50,summary:"Không thể phân tích AI ("+e.message+"). Lệnh vẫn được lưu.",violations:[]}}
   const r=await sb.from("trades").insert(t).select().single();if(r.error)throw r.error;S.trades.push(r.data);$("#n-out").innerHTML=alertHTML(t.ai)
