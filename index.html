@@ -31,7 +31,7 @@ button.pri:disabled{opacity:.5}button.sec{background:var(--line);color:var(--tx)
 table th,table td{padding:6px 8px}
 #auth{max-width:380px;margin:60px auto}
 </style></head><body>
-<header><h1>📈 Trade<b>Coach</b> AI <small class="mut" style="font-size:11px;font-weight:400">v1.6</small></h1><span><span class="mut" id="who"></span> <button class="sec hide" id="out">Đăng xuất</button></span></header>
+<header><h1>📈 Trade<b>Coach</b> AI <small class="mut" style="font-size:11px;font-weight:400">v1.7</small></h1><span><span class="mut" id="who"></span> <button class="sec hide" id="out">Đăng xuất</button></span></header>
 <main id="auth" class="hide"><div class="card"><h2>Đăng nhập / Đăng ký</h2>
 <label>Email</label><input id="a-mail" type="email"><label>Mật khẩu (≥6 ký tự)</label><input id="a-pw" type="password">
 <button class="pri" id="a-in">Đăng nhập</button> <button class="sec" id="a-up">Đăng ký</button><p id="a-msg" class="mut"></p></div></main>
@@ -176,7 +176,7 @@ function grp(cl,fn){const m={};cl.forEach(t=>[].concat(fn(t)).forEach(k=>{if(k!=
 function anaStats(cl){const n=cl.length,w=cl.filter(t=>t.result==="win").length,rs=cl.filter(t=>rrOf(t)!=null);
  const rr=rs.length?rs.reduce((s,t)=>s+rrOf(t),0)/rs.length:null,exp=rs.length?rs.reduce((s,t)=>s+rv(t),0)/rs.length:null;
  let cur=0,max=0;[...cl].sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).forEach(t=>{if(t.result==="loss"){cur++;max=Math.max(max,cur)}else cur=0});
- return{n,be:cl.filter(t=>t.result==="be").length,wr:n?w/n*100:null,rr,be:rr?100/(1+rr):null,exp,maxLoss:max}}
+ return{n,beN:cl.filter(t=>t.result==="be").length,wr:n?w/n*100:null,rr,be:rr?100/(1+rr):null,exp,maxLoss:max}}
 function breakdowns(cl){const V={green:"Tuân thủ (xanh)",yellow:"Lưu ý (vàng)",red:"Vi phạm (đỏ)"};
  return{"Theo cặp tiền":grp(cl,t=>t.pair),"Theo hướng":grp(cl,t=>t.side),
  "Theo setup":grp(cl,t=>{const a=tIds(t).map(id=>S.setups.find(x=>x.id===id)?.name).filter(Boolean);return a.length?a:"(không setup)"}),
@@ -192,7 +192,7 @@ function renderAna(){const{all,cl}=anaData(),s=anaStats(cl),B=breakdowns(cl),tip
  if(s.maxLoss>=4)tips.push(`Chuỗi thua dài nhất: <b>${s.maxLoss} lệnh</b> liên tiếp – cân nhắc quy tắc dừng giao dịch trong ngày sau 2–3 lệnh thua.`);
  const tbl=(t,rows)=>`<div class="card overflow"><h2>${t}</h2><table style="width:100%;border-collapse:collapse;text-align:left;min-width:420px"><tr class="mut"><th>Nhóm</th><th>Lệnh</th><th>Win-rate</th><th>RR TB</th><th>Kỳ vọng (R)</th></tr>${rows.map(x=>`<tr style="border-top:1px solid var(--line);${x.n<5?"opacity:.6":""}"><td>${esc(x.k)}${x.n<5?' <span class="mut">(mẫu nhỏ)</span>':""}</td><td>${x.n}</td><td class="${x.wr>=50?"up":"dn"}">${x.wr}%</td><td>${f1(x.rr)}</td><td class="${x.exp>0?"up":x.exp<0?"dn":""}">${x.exp==null?"–":(x.exp>0?"+":"")+f1(x.exp)}</td></tr>`).join("")}</table></div>`;
  $("#p-ana").innerHTML=`<select id="a-range" style="max-width:220px;margin-bottom:12px">${[["all","Toàn bộ thời gian"],["30","30 ngày gần nhất"],["90","90 ngày gần nhất"]].map(([v,l])=>`<option value="${v}" ${anaRange===v?"selected":""}>${l}</option>`).join("")}</select>
- <div class="grid" style="margin-bottom:14px"><div class="card kpi"><small>Lệnh đã đóng</small><b>${s.n}</b></div><div class="card kpi"><small>Hoà vốn (BE)</small><b>${s.be}</b></div>
+ <div class="grid" style="margin-bottom:14px"><div class="card kpi"><small>Lệnh đã đóng</small><b>${s.n}</b></div><div class="card kpi"><small>Hoà vốn (BE)</small><b>${s.beN}</b></div>
  <div class="card kpi"><small>Win-rate</small><b class="${s.wr>=(s.be||50)?"up":"dn"}">${s.wr==null?"–":s.wr.toFixed(0)+"%"}</b></div>
  <div class="card kpi"><small>RR dự kiến TB</small><b>${f1(s.rr)}</b></div>
  <div class="card kpi"><small>Win-rate hoà vốn</small><b>${s.be==null?"–":s.be.toFixed(0)+"%"}</b></div>
@@ -201,16 +201,17 @@ function renderAna(){const{all,cl}=anaData(),s=anaStats(cl),B=breakdowns(cl),tip
  ${tips.length?`<div class="card"><h2>Nhận xét nhanh</h2><ul style="margin:0;padding-left:18px">${tips.map(t=>`<li style="margin:6px 0">${t}</li>`).join("")}</ul></div>`:""}
  <div class="card"><h2>🤖 Coach AI phân tích & đề xuất cải thiện</h2><p class="mut">AI đọc thống kê và các lệnh gần nhất (ghi chú, lỗi kỷ luật) để đề xuất cách tăng win-rate và RR.</p>
  <button class="pri" id="a-btn" ${s.n<5?"disabled":""}>Phân tích lịch sử giao dịch</button>${s.n<5?' <span class="mut">Cần ít nhất 5 lệnh đã đóng (Thắng/Thua).</span>':""}<div id="a-out">${anaRep?repHTML(anaRep):""}</div></div>
+ ${qaCard()}
  ${s.n?Object.entries(B).map(([t,r])=>tbl(t,r)).join(""):'<div class="card mut">Chưa có lệnh nào đã đóng. Hãy cập nhật kết quả Thắng/Thua ở tab Nhật ký.</div>'}`;
  $("#a-range").onchange=e=>{anaRange=e.target.value;anaRep=null;renderAna()};
- $("#a-btn").onclick=()=>runAna(all,s,B)}
+ $("#a-btn").onclick=()=>runAna(all,s,B);qaBind()}
 function repHTML(x){const{report:r,provider:p}=x,L=(t,a,c)=>a?.length?`<h3 style="font-size:14px;margin:14px 0 4px;color:${c}">${t}</h3><ul style="margin:0;padding-left:18px">${a.map(i=>`<li style="margin:4px 0">${esc(i)}</li>`).join("")}</ul>`:"";
  return`<div class="alert yellow" style="margin-top:14px"><b>${esc(r.summary)}</b>${p&&p!=="gemini"?`<div class="mut" style="font-size:11px;font-weight:400">🔁 Phân tích bởi model dự phòng (${esc(p)})</div>`:""}
  <div style="font-weight:400">${L("✅ Điểm mạnh",r.strengths,"var(--up)")}${L("⚠️ Điểm yếu",r.weaknesses,"var(--dn)")}${L("🎯 Hành động cải thiện",r.actions,"var(--acc)")}${r.rr_advice?`<h3 style="font-size:14px;margin:14px 0 4px">📐 Về tỉ lệ RR</h3><div>${esc(r.rr_advice)}</div>`:""}</div></div>`}
 async function runAna(all,s,B){if(anaBusy)return;anaBusy=true;$("#a-btn").disabled=true;$("#a-out").innerHTML='<p class="mut">🤖 AI đang phân tích lịch sử…</p>';
  try{const rd=x=>x==null?null:+x.toFixed(2);
   const trades=[...all].slice(-40).map(t=>({pair:t.pair,side:t.side,rr:rd(rrOf(t)),result:t.result,verdict:t.ai?.verdict,score:t.ai?.score,fomo:!!t.ai?.fomo,violations:(t.ai?.violations||[]).slice(0,2),note:(t.note||"").slice(0,120),date:String(t.created_at).slice(0,10)}));
-  const stats={closed:s.n,winrate_pct:rd(s.wr),avg_planned_rr:rd(s.rr),breakeven_winrate_pct:rd(s.be),expectancy_R:rd(s.exp),max_losing_streak:s.maxLoss,be_count:s.be,
+  const stats={closed:s.n,winrate_pct:rd(s.wr),avg_planned_rr:rd(s.rr),breakeven_winrate_pct:rd(s.be),expectancy_R:rd(s.exp),max_losing_streak:s.maxLoss,be_count:s.beN,
    breakdown:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.map(x=>({nhom:x.k,lenh:x.n,winrate_pct:x.wr,rr_tb:rd(x.rr),ky_vong_R:rd(x.exp)}))]))};
   anaRep=await api({mode:"insights",stats,trades});$("#a-out").innerHTML=repHTML(anaRep)}
  catch(e){$("#a-out").innerHTML=`<div class="alert red">Lỗi: ${esc(e.message)}</div>`}
@@ -502,5 +503,28 @@ function btDownload(){if(!btPlan?.spec)return;try{const code=btMQL({...btPlan,sp
  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([code],{type:"text/plain;charset=utf-8"}));a.download="TradeCoach_"+slug+".mq5";document.body.appendChild(a);a.click();a.remove();$("#bt-smsg").textContent="Đã tải file .mq5 ✓"}
  catch(e){$("#bt-smsg").textContent="Không tạo được EA: "+e.message}}
 // BT-MQL-END
+let qaChat=[],qaBusy=false;
+const QA_SUG=["Setup nào đang hiệu quả nhất và vì sao?","Tôi hay mắc lỗi kỷ luật nào nhất khi thua lệnh?","Làm sao cải thiện RR dựa trên dữ liệu của tôi?","Liệt kê các lệnh thua do FOMO và rút ra bài học","Đề xuất 3 quy tắc cụ thể cho tuần tới"];
+const qaFmt=t=>esc(t).replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/^[-*] /gm,"• ").replace(/\n/g,"<br>");
+function qaLog(){return qaChat.length?qaChat.map(m=>m.role==="user"?`<div style="text-align:right;margin:8px 0"><span style="display:inline-block;background:var(--acc);color:#fff;border-radius:10px;padding:8px 12px;max-width:85%;text-align:left">${esc(m.text)}</span></div>`
+ :`<div style="margin:8px 0"><div style="display:inline-block;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 12px;max-width:92%">${m.err?`<span class="dn">${esc(m.text)}</span>`:qaFmt(m.text)}${m.provider&&m.provider!=="gemini"?`<div class="mut" style="font-size:11px">🔁 model dự phòng (${esc(m.provider)})</div>`:""}</div></div>`).join(""):'<p class="mut">Chưa có câu hỏi nào. Chọn một gợi ý bên dưới hoặc tự đặt câu hỏi / yêu cầu.</p>'}
+function qaCard(){return`<div class="card"><h2>💬 Hỏi đáp với Coach AI</h2><p class="mut">Hỏi hoặc yêu cầu cụ thể dựa trên nhật ký giao dịch của bạn (áp dụng theo bộ lọc thời gian ở trên). AI nhớ vài câu gần nhất trong cuộc trò chuyện này.</p>
+ <div id="qa-log" style="max-height:420px;overflow-y:auto">${qaLog()}</div><div style="margin-top:8px">${QA_SUG.map(q=>`<button class="chip qa-s">${esc(q)}</button>`).join("")}</div>
+ <textarea id="qa-in" style="min-height:60px;margin-top:6px" placeholder="VD: So sánh hiệu quả giữa các setup trong 30 ngày qua… (Ctrl+Enter để gửi)"></textarea>
+ <button class="pri" id="qa-send" ${S.trades.length?"":"disabled"}>Gửi</button> <button class="sec" id="qa-clear" style="margin-top:12px">Xoá hội thoại</button> ${S.trades.length?"":'<span class="mut">Cần có ít nhất một lệnh trong nhật ký.</span>'}</div>`}
+function qaDraw(thinking){const lg=$("#qa-log");if(!lg)return;lg.innerHTML=qaLog()+(thinking?'<p class="mut">🤖 Đang trả lời…</p>':"");lg.scrollTop=lg.scrollHeight;const b=$("#qa-send");if(b)b.disabled=qaBusy||!S.trades.length}
+function qaBind(){const inp=$("#qa-in");if(!inp)return;qaDraw(qaBusy);
+ $("#qa-send").onclick=qaSend;inp.onkeydown=e=>{if(e.key==="Enter"&&(e.ctrlKey||e.metaKey)){e.preventDefault();qaSend()}};
+ $("#qa-clear").onclick=()=>{qaChat=[];qaDraw()};document.querySelectorAll(".qa-s").forEach(b=>b.onclick=()=>{inp.value=b.textContent;qaSend()})}
+function qaCtx(all,s,B){const rd=x=>x==null?null:+x.toFixed(2),name=id=>S.setups.find(x=>x.id===id)?.name;
+ const trades=all.slice(-60).map(t=>({stt:S.trades.indexOf(t)+1,ngay:String(t.created_at).slice(0,10),cap:t.pair,huong:t.side,setup:tIds(t).map(name).filter(Boolean),rr:rd(rrOf(t)),ket_qua:t.result,ky_luat:t.ai?.verdict,diem:t.ai?.score,fomo:!!t.ai?.fomo,loi:(t.ai?.violations||[]).slice(0,2),ghi_chu:(t.note||"").slice(0,150)}));
+ const stats={closed:s.n,be_count:s.beN,winrate_pct:rd(s.wr),avg_planned_rr:rd(s.rr),breakeven_winrate_pct:rd(s.be),expectancy_R:rd(s.exp),max_losing_streak:s.maxLoss,
+  breakdown:Object.fromEntries(Object.entries(B).map(([k,v])=>[k,v.map(x=>({nhom:x.k,lenh:x.n,winrate_pct:x.wr,rr_tb:rd(x.rr),ky_vong_R:rd(x.exp)}))]))};
+ return{stats,trades,setups:S.setups.map(x=>({ten:x.name,quy_tac:(x.body||"").slice(0,600)}))}}
+async function qaSend(){if(qaBusy)return;const q=$("#qa-in").value.trim();if(!q)return;
+ qaBusy=true;const hist=qaChat.filter(m=>!m.err).slice(-6).map(m=>({role:m.role,text:m.text.slice(0,1500)}));qaChat.push({role:"user",text:q});$("#qa-in").value="";qaDraw(true);
+ try{const{all,cl}=anaData(),ctx=qaCtx(all,anaStats(cl),breakdowns(cl)),r=await api({mode:"qa",question:q,history:hist,...ctx});qaChat.push({role:"ai",text:r.answer,provider:r.provider})}
+ catch(e){qaChat.push({role:"ai",err:1,text:"Lỗi: "+e.message})}
+ qaBusy=false;qaDraw()}
 boot().catch(e=>{$("#who").textContent="Chưa cấu hình biến môi trường Supabase"});
 </script></body></html>
