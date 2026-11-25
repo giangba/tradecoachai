@@ -77,6 +77,16 @@ Chỉ trả JSON thuần: {"match":"yes|partial|no","score":0-100,"direction":"B
 ${JSON.stringify(req.body.payload)}
 Nếu payload có kind="image" thì đây KHÔNG phải backtest trên dữ liệu giá mà là phân loại các ảnh chụp do trader tự chọn: hãy nhấn mạnh thiên lệch chọn mẫu, tính chủ quan khi AI đọc ảnh, mẫu nhỏ, và khuyên kiểm chứng bằng backtest CSV. Hãy nhận định thẳng thắn: số lệnh đủ để tin chưa (dưới 100 lệnh thì độ tin cậy thấp), in-sample so với out-of-sample có dấu hiệu overfitting không, kỳ vọng và profit factor có đủ biên an toàn sau chi phí không, drawdown/chuỗi thua có chịu được không, phần nào của phương pháp bị bỏ qua (unsupported) làm kết quả kém đáng tin. Không hứa hẹn lợi nhuận. Chỉ trả JSON thuần: {"verdict":"promising|needs_work|reject","summary":"2-3 câu","strengths":["..."],"risks":["..."],"suggestions":["đề xuất cụ thể để cải thiện hoặc kiểm chứng thêm, tối đa 5"]}.`,[],true);
    return res.json({review:JSON.parse(r.text.match(/\{[\s\S]*\}/)[0]),provider:r.provider})}
+  if(mode==="qa"){const q=String(req.body.question||"").slice(0,1000),hist=Array.isArray(req.body.history)?req.body.history.slice(-6):[];
+   if(!q.trim())return res.status(400).json({error:"Thiếu câu hỏi"});
+   const r=await ask(`Bạn là Coach giao dịch Forex của ứng dụng nhật ký TradeCoach AI, thân thiện nhưng thẳng thắn. Trả lời tiếng Việt, ngắn gọn, dễ đọc (dùng gạch đầu dòng, **in đậm** ý chính).
+NGUYÊN TẮC: chỉ dựa vào dữ liệu bên dưới, không bịa số liệu. Nếu dữ liệu không đủ thì nói rõ cần thêm gì (ví dụ nhóm dưới 5 lệnh là mẫu quá nhỏ, cần khoảng 30+ lệnh đã đóng mới đáng tin). Quy ước R: thắng = +RR dự kiến, thua = -1R, hoà vốn (BE) = 0R, không phải R thực tế. Không dự đoán thị trường, không đưa tín hiệu mua/bán; tập trung vào quy trình, kỷ luật, quản trị rủi ro. Khi nhắc tới một lệnh hãy ghi "lệnh #stt". Nếu câu hỏi không liên quan đến giao dịch hoặc dữ liệu của trader, lịch sự đưa cuộc trò chuyện về chủ đề giao dịch.
+CÁC SETUP CỦA TRADER (JSON): ${JSON.stringify(setups||[])}
+THỐNG KÊ (JSON): ${JSON.stringify(stats||{})}
+CÁC LỆNH GẦN NHẤT (JSON): ${JSON.stringify(trades||[])}
+HỘI THOẠI TRƯỚC ĐÓ (JSON): ${JSON.stringify(hist)}
+CÂU HỎI/YÊU CẦU MỚI CỦA TRADER: ${q}`,[],false);
+   return res.json({answer:r.text.trim(),provider:r.provider})}
   if(mode==="insights"){
    const r=await ask(`Bạn là coach giao dịch Forex giàu kinh nghiệm, nói thẳng nhưng xây dựng. Trả lời tiếng Việt.
 Phân tích lịch sử giao dịch của một trader để giúp họ TĂNG WIN-RATE và CẢI THIỆN TỈ LỆ RR.
